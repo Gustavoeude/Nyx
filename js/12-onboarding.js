@@ -3,7 +3,7 @@
 /* ==========================================================
    Onboarding da primeira abertura (tela cheia, passo a passo)
    Reaproveita importFolder, openFilePicker, addDirectory e
-   MN.requestNotifications. Dá para refazer em Ajustes.
+   MN.requestNotifications. Visual Material 3 Expressive (forma que se transforma, progresso ondulado).
    Cada passo com ação mostra o resultado (ex.: a pasta escolhida)
    e libera o botão "Continuar".
    ========================================================== */
@@ -155,24 +155,103 @@ function obUpdateStatus() {
     : "Importando músicas… " + added + (obStatus.expected ? " de " + obStatus.expected : "");
 }
 
+// ---------- forma que se transforma entre os passos ----------
+const OB_N = 96;
+let obShapeR = null;        // raios atuais (para animar de um passo ao outro)
+let obShapeAnim = 0;
+
+function obRadii(lobes, amp) {
+  const r = [];
+  for (let i = 0; i < OB_N; i++) r.push((1 + amp * Math.cos(lobes * (i / OB_N) * Math.PI * 2)) / (1 + amp));
+  return r;
+}
+
+function obShapePath(r) {
+  const n = r.length;
+  const pts = r.map((v, i) => {
+    const a = (i / n) * Math.PI * 2;
+    return [50 + 46 * v * Math.cos(a), 50 + 46 * v * Math.sin(a)];
+  });
+  const f = x => x.toFixed(2);
+  let d = "M" + f(pts[0][0]) + " " + f(pts[0][1]);
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    d += "C" + f(p1[0] + (p2[0] - p0[0]) / 6) + " " + f(p1[1] + (p2[1] - p0[1]) / 6) + " " +
+      f(p2[0] - (p3[0] - p1[0]) / 6) + " " + f(p2[1] - (p3[1] - p1[1]) / 6) + " " + f(p2[0]) + " " + f(p2[1]);
+  }
+  return d + "Z";
+}
+
+const obBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+function obMorphTo(path, target) {
+  cancelAnimationFrame(obShapeAnim);
+  const from = obShapeR || target;
+  const reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced || from === target) { obShapeR = target; path.setAttribute("d", obShapePath(target)); return; }
+  path.setAttribute("d", obShapePath(from));
+  const t0 = performance.now(), dur = 800;
+  const tick = now => {
+    if (!obRoot || !path.isConnected) return;
+    const k = Math.min(1, (now - t0) / dur), e = obBack(k);
+    obShapeR = from.map((v, i) => v + (target[i] - v) * e);
+    path.setAttribute("d", obShapePath(obShapeR));
+    if (k < 1) obShapeAnim = requestAnimationFrame(tick); else obShapeR = target;
+  };
+  obShapeAnim = requestAnimationFrame(tick);
+}
+
+const OB_WAVE = '<svg viewBox="0 0 96 10" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" d="M0 5Q6 0 12 5T24 5T36 5T48 5T60 5T72 5T84 5T96 5"/></svg>';
+
+// Conteúdo de apoio de cada passo (aparece enquanto ainda não há resultado).
+function obExtra(step) {
+  const box = el("div", "ob-extra");
+  if (step.key === "welcome") {
+    const chips = el("div", "ob-chips");
+    [["lyrics", "Letras sincronizadas"], ["playlist_add", "Playlists"], ["folder", "Pastas monitoradas"]].forEach(([ic, t]) => {
+      const c = el("span");
+      c.innerHTML = obIcon(ic) + "<span>" + t + "</span>";
+      chips.appendChild(c);
+    });
+    box.appendChild(chips);
+  } else if (step.key === "musicas") {
+    const tip = el("div", "ob-tip");
+    tip.innerHTML = obIcon("info") + "<span>Escolha a pasta principal. O Nyx encontra as subpastas sozinho. Você pode adicionar mais de uma pasta e mudar isso depois em Ajustes.</span>";
+    box.appendChild(tip);
+  } else if (step.key === "avisos") {
+    const lock = el("div", "ob-lock");
+    lock.innerHTML = '<span class="ob-lock-cv">' + obIcon("music_note") + '</span>' +
+      '<div class="ob-lock-tt"><b>Sua música</b><small>Artista · Nyx</small><div class="ob-lock-pg"><i></i></div></div>' +
+      '<span class="ob-lock-pl">' + obIcon("pause") + '</span>';
+    box.appendChild(lock);
+  } else if (step.key === "bateria") {
+    ["Toque em desativar otimização", "Confirme na janela do Android"].forEach(t => {
+      const tip = el("div", "ob-tip");
+      tip.innerHTML = obIcon("info") + "<span>" + t + "</span>";
+      box.appendChild(tip);
+    });
+  } else return null;
+  return box;
+}
+
 // Passos: cada um diz o que mostra e o que o botão principal faz.
 function obSteps() {
   const native = obHasNative();
   const steps = [
     {
-      key: "welcome", title: "Bem-vindo ao Nyx", app: true,
+      key: "welcome", title: "Bem-vindo ao Nyx", app: true, shape: [8, 0.07],
       text: "Vamos deixar tudo pronto para você. Leva menos de um minuto.",
       primary: "Vamos lá"
     },
     {
-      key: "musicas", title: "Suas músicas", icon: "library_music",
+      key: "musicas", title: "Suas músicas", icon: "library_music", shape: [6, 0.1],
       text: native
-        ? "Escolha a pasta onde ficam suas músicas. O Nyx guarda essa pasta em Ajustes > Biblioteca e importa tudo dela. Você também pode escolher arquivos soltos."
+        ? "Escolha a pasta onde ficam suas músicas. O Nyx guarda essa pasta em Ajustes > Biblioteca e importa tudo dela."
         : "Escolha arquivos de áudio ou uma pasta para montar sua biblioteca. O app só recebe o que você selecionar.",
       primary: native ? "Escolher pasta" : "Escolher arquivos",
       busy: native ? "Lendo a pasta…" : "Importando…",
       secondary: native ? "Escolher arquivos" : "",
-      again: native ? "Escolher outra pasta" : "Escolher mais arquivos",
+      again: native ? "Adicionar outra pasta" : "Escolher mais arquivos",
       run: native ? obPickFolder : obPickWeb,
       runSecondary: obPickFiles,
       orbit: ["folder", "music_note", "playlist_add"]
@@ -181,7 +260,7 @@ function obSteps() {
   if (native) {
     steps.push(
       {
-        key: "avisos", title: "Notificações", icon: "notifications",
+        key: "avisos", title: "Notificações", icon: "notifications", shape: [10, 0.06],
         text: "Ative as notificações para controlar a música pela tela de bloqueio e pela barra de notificações.",
         primary: "Ativar notificações",
         busy: "Aguardando…",
@@ -204,7 +283,7 @@ function obSteps() {
     );
     if (typeof MN.requestBatteryExemption === "function") {
       steps.push({
-        key: "bateria", title: "Bateria", icon: "battery",
+        key: "bateria", title: "Bateria", icon: "battery", shape: [4, 0.12],
         text: "Alguns Androids encerram apps em segundo plano. Desative a otimização de bateria para a música não parar do nada.",
         primary: "Desativar otimização",
         busy: "Aguardando…",
@@ -342,27 +421,19 @@ function obRender() {
   // progresso
   const dots = obRoot.querySelector(".ob-dots");
   dots.innerHTML = "";
-  obList.forEach((_, i) => dots.appendChild(el("span", i === obIndex ? "on" : i < obIndex ? "done" : "")));
+  obList.forEach((_, i) => {
+    const d = el("span", i === obIndex ? "on" : i < obIndex ? "done" : "");
+    d.innerHTML = OB_WAVE;
+    dots.appendChild(d);
+  });
   obRoot.querySelector(".ob-count").textContent = (obIndex + 1) + " de " + obList.length;
 
-  // título, texto e resultado
-  const h = el("h1", "ob-title");
-  h.textContent = step.title;
-  const p = el("p", "ob-text", step.text);
-  stage.append(h, p);
-  if (res) stage.appendChild(obResultCard(res));
-
-  // lista de pastas no lugar da ilustração
-  if (step.list) {
-    const { wrap, hint } = obFolderList();
-    stage.append(wrap, hint);
-  }
-
-  // ilustração
+  // ilustração: forma que se transforma + ícone + satélites
   const art = el("div", "ob-art" + (res ? " small" : ""));
   art.setAttribute("aria-hidden", "true");
-  const back2 = el("i", "ob-card ob-card-b");
-  const back1 = el("i", "ob-card ob-card-a");
+  const bd = el("i", "ob-bd");
+  const shape = el("div", "ob-shape");
+  shape.innerHTML = '<svg viewBox="0 0 100 100"><path d=""/></svg>';
   const main = el("div", "ob-main");
   if (step.app) {
     const img = document.createElement("img");
@@ -374,13 +445,31 @@ function obRender() {
   } else {
     main.innerHTML = obIcon(step.icon);
   }
-  art.append(back2, back1, main);
-  (step.orbit || []).forEach((name, i) => {
+  art.append(bd, shape, main);
+  (step.orbit || (step.app ? ["music_note", "play_arrow", "playlist_add"] : [])).forEach((name, i) => {
     const c = el("span", "ob-chip ob-chip-" + (i + 1));
     c.innerHTML = obIcon(name);
     art.appendChild(c);
   });
   if (!step.list) stage.appendChild(art);
+
+  // título, texto e resultado
+  const h = el("h1", "ob-title");
+  h.textContent = step.title;
+  const p = el("p", "ob-text", step.text);
+  stage.append(h, p);
+  if (res) stage.appendChild(obResultCard(res));
+  else { const ex = obExtra(step); if (ex) stage.appendChild(ex); }
+
+  // lista de pastas no lugar da ilustração
+  if (step.list) {
+    const { wrap, hint } = obFolderList();
+    stage.append(wrap, hint);
+  }
+  if (!step.list) {
+    const sh = step.shape || [7, 0.08];
+    obMorphTo(shape.querySelector("path"), obRadii(sh[0], sh[1]));
+  }
   void stage.offsetWidth;
   stage.classList.add("ob-in");
 
@@ -409,14 +498,10 @@ function obRender() {
 
   const links = el("div", "ob-links");
   if (step.run && done && step.again) {
-    const again = el("button", "ob-link", step.again);
+    const again = el("button", "ob-link");
+    again.innerHTML = obIcon("add") + "<span>" + step.again + "</span>";
     again.onclick = () => exec(step.run, main2, step.busy);
     links.appendChild(again);
-  }
-  if (step.secondary && !done) {
-    const sec = el("button", "ob-link", step.secondary);
-    sec.onclick = () => exec(step.runSecondary, main2, step.busy);
-    links.appendChild(sec);
   }
   if (step.skippable && !done) {
     const skip = el("button", "ob-link", "Pular");
@@ -440,7 +525,14 @@ function obRender() {
     if (!step.run || done) advance();
     else exec(step.run, main2, step.busy);
   };
-  row.appendChild(main2);
+  if (step.secondary && !done) {
+    // dois botões conectados: pasta | arquivos soltos
+    const group = el("div", "ob-group");
+    const sec = el("button", "ob-sec", step.secondary);
+    sec.onclick = () => exec(step.runSecondary, main2, step.busy);
+    group.append(main2, sec);
+    row.appendChild(group);
+  } else row.appendChild(main2);
   foot.appendChild(row);
 }
 
@@ -451,6 +543,7 @@ function startOnboarding(instant) {
   obDir = 1;
   obBusy = false;
   obResults = {};
+  obShapeR = null;
   obChosen = [];
   obScan.clear();
   obIgnoreSel.clear();
