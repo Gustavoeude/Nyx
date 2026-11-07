@@ -2689,7 +2689,9 @@ body.light .ob {
 .ob-group .ob-primary:active, .ob-sec:active { border-radius: 24px; }
 .ob-group .ob-primary svg { display: none; }
 .ob-group .ob-primary, .ob-sec { font-size: 14.5px; line-height: 1.15; text-align: center; }
-.ob-sec.busy { pointer-events: none; opacity: .7; }
+.ob-sec { gap: 8px; }
+.ob-sec.busy { pointer-events: none; opacity: .8; }
+.ob-sec.busy .ob-spin { display: block; width: 16px; height: 16px; }
 .ob-spin { display: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: ob-rot .8s linear infinite; }
 .ob-primary.busy { pointer-events: none; opacity: .9; }
 .ob-primary.busy .ob-spin { display: block; }

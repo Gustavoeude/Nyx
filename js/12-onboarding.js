@@ -309,9 +309,40 @@ async function obPickWeb() {
   return added > 0 ? { label: "Arquivos adicionados", sub: obPlural(added, "música adicionada", "músicas adicionadas") } : null;
 }
 
+// Abre o seletor de arquivos e descobre se a pessoa escolheu algo ou cancelou
+// (cancelar não pode deixar o botão preso em "carregando").
+function obFilePickerOutcome() {
+  return new Promise(resolve => {
+    const input = $("fileInput");
+    let finished = false;
+    const timers = [];
+    const finish = v => {
+      if (finished) return;
+      finished = true;
+      timers.forEach(clearTimeout);
+      input.removeEventListener("change", onChange);
+      input.removeEventListener("cancel", onCancel);
+      window.removeEventListener("focus", onBack);
+      document.removeEventListener("visibilitychange", onVis);
+      resolve(v);
+    };
+    const onChange = () => finish(true);
+    const onCancel = () => finish(false);
+    // Ao voltar para o app sem o evento "change", espera um pouco e considera cancelado.
+    const onBack = () => timers.push(setTimeout(() => { if (!(input.files && input.files.length)) finish(false); }, 1500));
+    const onVis = () => { if (!document.hidden) onBack(); };
+    input.addEventListener("change", onChange);
+    input.addEventListener("cancel", onCancel);
+    window.addEventListener("focus", onBack);
+    document.addEventListener("visibilitychange", onVis);
+    timers.push(setTimeout(() => finish(false), 10 * 60 * 1000));
+    openFilePicker();
+  });
+}
+
 async function obPickFiles() {
   const before = songs.length;
-  openFilePicker();
+  if (!(await obFilePickerOutcome())) return null;
   const added = await obWatchSongs(before);
   return added > 0 ? { label: "Arquivos adicionados", sub: obPlural(added, "música adicionada", "músicas adicionadas") } : null;
 }
@@ -322,6 +353,7 @@ let obAll = [];
 let obList = [];
 let obDir = 1;
 let obBusy = false;
+let obActionBusy = false;   // uma ação (pasta, arquivos, permissão) em andamento
 let obResults = {};
 
 // Passos visíveis agora (o de pastas ignoradas só aparece se houver subpastas com música).
@@ -484,15 +516,18 @@ function obRender() {
 
   // executa uma ação, mostra "ocupado" e guarda o resultado
   const exec = async (fn, button, busyText) => {
-    if (obBusy || button.classList.contains("busy")) return;
-    const idle = button.querySelector("span").textContent;
+    if (obBusy || obActionBusy) return;
+    obActionBusy = true;
+    const lbl = button.querySelector(".ob-lbl");
+    const idle = lbl.textContent;
     button.classList.add("busy");
-    button.querySelector("span").textContent = busyText || "Aguardando…";
+    lbl.textContent = busyText || "Aguardando…";
     let r = null;
     try { r = await fn(); } catch (e) { logErr("onboarding:" + step.key, e); }
+    obActionBusy = false;
     if (!obRoot) return;
     button.classList.remove("busy");
-    button.querySelector("span").textContent = idle;
+    lbl.textContent = idle;
     if (r) { obResults[step.key] = r; obRender(); }
   };
 
@@ -519,7 +554,7 @@ function obRender() {
     row.appendChild(back);
   }
   const main2 = el("button", "ob-primary");
-  main2.appendChild(el("span", "", done ? (last ? "Concluir" : "Continuar") : step.primary));
+  main2.appendChild(el("span", "ob-lbl", done ? (last ? "Concluir" : "Continuar") : step.primary));
   main2.insertAdjacentHTML("beforeend", '<i class="ob-spin" aria-hidden="true"></i>' + obIcon("arrow"));
   main2.onclick = () => {
     if (!step.run || done) advance();
@@ -528,8 +563,9 @@ function obRender() {
   if (step.secondary && !done) {
     // dois botões conectados: pasta | arquivos soltos
     const group = el("div", "ob-group");
-    const sec = el("button", "ob-sec", step.secondary);
-    sec.onclick = () => exec(step.runSecondary, main2, step.busy);
+    const sec = el("button", "ob-sec");
+    sec.innerHTML = '<i class="ob-spin" aria-hidden="true"></i><span class="ob-lbl">' + step.secondary + "</span>";
+    sec.onclick = () => exec(step.runSecondary, sec, "Importando…");
     group.append(main2, sec);
     row.appendChild(group);
   } else row.appendChild(main2);
@@ -542,6 +578,7 @@ function startOnboarding(instant) {
   obIndex = 0;
   obDir = 1;
   obBusy = false;
+  obActionBusy = false;
   obResults = {};
   obShapeR = null;
   obChosen = [];
