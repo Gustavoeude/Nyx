@@ -561,7 +561,7 @@ async function importFolder() {
       }
 
       await importFiles(found, "“" + (selected.name || "pasta") + "”");
-      return;
+      return { name: selected.name || "pasta", count: found.length }; // resumo usado pela introdução
     } catch (e) {
       console.error("Falha ao importar pasta pelo Android:", e);
       showToast("Não foi possível ler essa pasta. Tente novamente ou escolha as músicas individualmente.");
@@ -585,7 +585,7 @@ async function importFolder() {
         const found = [];
         await collectFromDirectory(dir, found, dir.name);
         await importFiles(found, "“" + dir.name + "”");
-        return;
+        return { name: dir.name, count: found.length };
       } catch (_) {
         showToast("Não consegui ler essa pasta; tentando o seletor do navegador.");
       }

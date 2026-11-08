@@ -8,6 +8,8 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.provider.DocumentsContract;
 
 import androidx.activity.result.ActivityResult;
@@ -111,11 +113,14 @@ public class MusicaPlugin extends Plugin {
                 }
             }
             JSArray files = new JSArray();
+            JSArray folders = new JSArray();
             String rootId = DocumentsContract.getTreeDocumentId(treeUri);
-            collectFolderAudio(treeUri, rootId, "", files, ignoredDocumentIds);
+            collectFolderAudio(treeUri, rootId, "", files, folders, ignoredDocumentIds);
 
             JSObject response = new JSObject();
             response.put("files", files);
+            // Subpastas que têm músicas direto nelas; "uri" serve como diretório ignorado.
+            response.put("folders", folders);
             call.resolve(response);
         } catch (Exception e) {
             call.reject("Não foi possível listar a pasta: " + e.getMessage());
@@ -123,7 +128,7 @@ public class MusicaPlugin extends Plugin {
     }
 
     private void collectFolderAudio(Uri treeUri, String parentId, String prefix, JSArray files,
-                                    List<String> ignoredDocumentIds) throws Exception {
+                                    JSArray folders, List<String> ignoredDocumentIds) throws Exception {
         if (isIgnoredDocument(parentId, ignoredDocumentIds)) return;
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId);
         String[] columns = {
@@ -141,6 +146,7 @@ public class MusicaPlugin extends Plugin {
             int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
             int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
             int modColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+            int directAudio = 0;
             while (cursor.moveToNext()) {
                 String id = cursor.getString(idColumn);
                 String name = cursor.getString(nameColumn);
@@ -149,7 +155,7 @@ public class MusicaPlugin extends Plugin {
 
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                     if (!isIgnoredDocument(id, ignoredDocumentIds)) {
-                        collectFolderAudio(treeUri, id, relativePath, files, ignoredDocumentIds);
+                        collectFolderAudio(treeUri, id, relativePath, files, folders, ignoredDocumentIds);
                     }
                 } else if (isAudioDocument(name, mime)) {
                     Uri fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
@@ -161,7 +167,16 @@ public class MusicaPlugin extends Plugin {
                     item.put("size", cursor.isNull(sizeColumn) ? 0L : cursor.getLong(sizeColumn));
                     item.put("lastModified", cursor.isNull(modColumn) ? 0L : cursor.getLong(modColumn));
                     files.put(item);
+                    if (name == null || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".lrc")) directAudio++;
                 }
+            }
+            if (directAudio > 0 && !prefix.isEmpty()) {
+                JSObject folder = new JSObject();
+                folder.put("uri", DocumentsContract.buildTreeDocumentUri(treeUri.getAuthority(), parentId).toString());
+                folder.put("name", prefix.substring(prefix.lastIndexOf('/') + 1));
+                folder.put("relativePath", prefix);
+                folder.put("count", directAudio);
+                folders.put(folder);
             }
         }
     }
@@ -253,6 +268,13 @@ public class MusicaPlugin extends Plugin {
 
     @Override
     public void load() {
+        // Sem a barra de rolagem lateral do WebView nas listas.
+        try {
+            getBridge().executeOnMainThread(() -> {
+                getBridge().getWebView().setVerticalScrollBarEnabled(false);
+                getBridge().getWebView().setHorizontalScrollBarEnabled(false);
+            });
+        } catch (Exception ignored) { }
         MusicaPlaybackService.sink = (name, data) -> notifyListeners(name, data);
         MusicaService.listener = (action, positionMs) -> {
             JSObject o = new JSObject();
@@ -260,6 +282,27 @@ public class MusicaPlugin extends Plugin {
             o.put("position", positionMs < 0 ? 0 : positionMs / 1000.0);
             notifyListeners("action", o);
         };
+    }
+
+    /** Pinta a faixa do sistema embaixo da tela com a cor do app (em vez do cinza padrão). */
+    @PluginMethod
+    public void setSystemBars(PluginCall call) {
+        final String hex = call.getString("navColor");
+        final boolean lightBackground = call.getBoolean("light", false);
+        final Activity activity = getActivity();
+        if (activity == null || hex == null) {
+            call.resolve();
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            try {
+                android.view.Window window = activity.getWindow();
+                window.setNavigationBarColor(android.graphics.Color.parseColor(hex));
+                androidx.core.view.WindowCompat.getInsetsController(window, window.getDecorView())
+                        .setAppearanceLightNavigationBars(lightBackground);
+            } catch (Exception ignored) { }
+            call.resolve();
+        });
     }
 
     @PluginMethod
@@ -311,6 +354,27 @@ public class MusicaPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("granted", Build.VERSION.SDK_INT < 33
                 || getPermissionState("notifications") == PermissionState.GRANTED);
+        call.resolve(result);
+    }
+
+    /** Pede para o Android não otimizar a bateria do app (evita a música ser encerrada em segundo plano). */
+    @PluginMethod
+    public void requestBatteryExemption(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            Context ctx = getContext();
+            PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            boolean already = pm != null && pm.isIgnoringBatteryOptimizations(ctx.getPackageName());
+            result.put("granted", already);
+            if (!already) {
+                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(Uri.parse("package:" + ctx.getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(intent);
+            }
+        } catch (Exception e) {
+            result.put("granted", false);
+        }
         call.resolve(result);
     }
 

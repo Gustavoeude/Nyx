@@ -17,6 +17,7 @@ const files = [
   "js/09-ajustes.js",
   "js/10-fontes-letras.js",
   "js/pasta-monitorada.js",
+  "js/12-onboarding.js",
   "js/11-inicio-pwa.js",
   "style.css",
   "jsmediatags.min.js",

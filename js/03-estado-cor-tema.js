@@ -160,13 +160,26 @@ function applyPalette() {
     set("--glow", "hsl(" + h + " " + Math.min(sat + 15, 100) + "% 80% / .75)");
   }
 
+  const themeColor = !light && settings.amoled ? "#000000" : hsl(h, light ? k(0.3) : k(0.25), light ? 97 : 7);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    meta.setAttribute(
-      "content",
-      !light && settings.amoled ? "#000000" : hsl(h, light ? k(0.3) : k(0.25), light ? 97 : 7)
-    );
-  }
+  if (meta) meta.setAttribute("content", themeColor);
+  syncSystemBars(themeColor, light);
+}
+
+// Android: a faixa de baixo do sistema usa a mesma cor do fundo do app.
+let lastSystemBars = "";
+function syncSystemBars(css, light) {
+  if (!MN || typeof MN.setSystemBars !== "function") return;
+  try {
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.fillStyle = css;
+    const hex = ctx.fillStyle; // o canvas converte para #rrggbb
+    const key = hex + (light ? "L" : "D");
+    if (key === lastSystemBars) return;
+    lastSystemBars = key;
+    const r = MN.setSystemBars({ navColor: hex, light: !!light });
+    if (r && typeof r.catch === "function") r.catch(() => {}); // APK antigo sem o método
+  } catch (e) { logErr("tema:systembars", e); }
 }
 
 let colorToken = 0;
