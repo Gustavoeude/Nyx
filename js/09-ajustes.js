@@ -694,6 +694,10 @@ function buildClipDefs() {
   add("star", star());
   add("flower", radial(6, 0.39, 0.11));
   add("cookie", radial(12, 0.46, 0.04));
+  // formas do visual M3 Expressive (capas das listas, mini player e Início)
+  add("scal8", radial(8, 0.44, 0.055));
+  add("scal6", radial(6, 0.42, 0.075));
+  add("scal5", radial(5, 0.41, 0.085));
   add(
     "heart",
     "M0.5,0.97 C0.12,0.68 0,0.5 0,0.29 C0,0.11 0.13,0.02 0.27,0.02 C0.37,0.02 0.45,0.07 0.5,0.16 C0.55,0.07 0.63,0.02 0.73,0.02 C0.87,0.02 1,0.11 1,0.29 C1,0.5 0.88,0.68 0.5,0.97 Z"

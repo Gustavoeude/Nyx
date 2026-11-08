@@ -124,6 +124,13 @@ $("seek").addEventListener("change", () => {
    Player completo
    ========================================================== */
 function updateFullPlayer() {
+  const navSh = $("navShuffle");
+  if (navSh) {
+    navSh.classList.toggle("on", shuffle);
+    navSh.setAttribute("aria-pressed", String(shuffle));
+    navSh.setAttribute("aria-label", shuffle ? "Aleatório ligado" : "Aleatório desligado");
+  }
+
   const song = current();
   if (!song) return;
 
@@ -210,6 +217,26 @@ $("fpFav").onclick = () => {
 };
 
 $("fpShuffle").onclick = () => {
+  shuffle = !shuffle;
+  nativeRefreshUpcoming();
+  updateFullPlayer();
+  showToast(shuffle ? "Aleatório ligado" : "Aleatório desligado");
+};
+
+// Botão de aleatório da barra de navegação: liga/desliga e, sem nada tocando, começa uma música ao acaso
+$("navShuffle").onclick = () => {
+  if (!songs.length) {
+    openFilePicker();
+    return;
+  }
+  if (!current()) {
+    shuffle = true;
+    const pickId = songs[Math.floor(Math.random() * songs.length)].id;
+    playSong(pickId, allIds());
+    updateFullPlayer();
+    showToast("Aleatório ligado");
+    return;
+  }
   shuffle = !shuffle;
   nativeRefreshUpcoming();
   updateFullPlayer();
