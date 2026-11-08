@@ -2591,6 +2591,7 @@ body.light .ob {
 .ob-dots span.on svg, .ob-dots span.done svg { display: block; }
 .ob-dots span.done svg { stroke: var(--ob-dim); }
 .ob-dots span.on svg { animation: ob-wave 1.8s linear infinite; }
+.ob-dots span.done svg { animation: ob-wave 2.6s linear infinite; }
 @keyframes ob-wave { to { transform: translateX(-50%); } }
 .ob-count { font-size: 12px; color: var(--ob-dim); }
 .ob-skipall, .ob-link {
