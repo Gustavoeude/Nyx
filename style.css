@@ -2041,6 +2041,9 @@ body.disc .fp-cover::after {
 .shape-star     { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-star) !important; }
 .shape-flower   { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-flower) !important; }
 .shape-cookie   { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-cookie) !important; }
+.shape-scal8    { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-scal8) !important; }
+.shape-scal6    { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-scal6) !important; }
+.shape-scal5    { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-scal5) !important; }
 .shape-heart    { border-radius: 0 !important; box-shadow: none !important; clip-path: url(#clip-heart) !important; }
 
 .art-main, .art-small, .hero-play {
@@ -3429,3 +3432,6 @@ body:not(.disc) .fp-cover {
     transition: none;
   }
 }
+
+/* capa do "Continuar ouvindo": só ganha fundo quando você escolhe uma forma */
+#artMain[class*="shape-"] { background: var(--md-primary); color: var(--md-on-primary); }

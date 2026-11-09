@@ -632,14 +632,26 @@ window.addEventListener("popstate", () => {
    Formas das bolinhas (segure para personalizar)
    ========================================================== */
 const BUBBLES = {
-  artMain: "Bolinha grande",
-  artSmall1: "Bolinha da esquerda",
-  artSmall2: "Bolinha da direita",
+  artMain: "Capa do Continuar ouvindo",
+  favCovers: "Capas dos favoritos",
+  songCovers: "Capas das músicas (listas)",
+  nowCover: "Capa do mini player",
   heroPlay: "Botão de tocar"
+};
+
+const BUBBLE_SEL = {
+  artMain: "#artMain",
+  favCovers: ".fav-cov",
+  songCovers: ".song-cover, .h-cover",
+  nowCover: "#nowCover",
+  heroPlay: "#heroPlay"
 };
 
 const SHAPES = [
   { id: "default", name: "Padrão" },
+  { id: "scal8", name: "Biscoito 8" },
+  { id: "scal6", name: "Biscoito 6" },
+  { id: "scal5", name: "Biscoito 5" },
   { id: "circle", name: "Círculo" },
   { id: "squircle", name: "Quadrado" },
   { id: "pill", name: "Pílula" },
@@ -709,17 +721,17 @@ buildClipDefs();
 
 function applyShapes() {
   Object.keys(BUBBLES).forEach(id => {
-    const node = $(id);
-    if (!node) return;
-    [...node.classList].forEach(c => {
-      if (c.indexOf("shape-") === 0) node.classList.remove(c);
-    });
     const s = settings.shapes[id];
-    if (s && s !== "default") node.classList.add("shape-" + s);
+    document.querySelectorAll(BUBBLE_SEL[id]).forEach(node => {
+      [...node.classList].forEach(c => {
+        if (c.indexOf("shape-") === 0) node.classList.remove(c);
+      });
+      if (s && s !== "default") node.classList.add("shape-" + s);
+    });
   });
 }
 
-const DEFAULT_PREV = { artMain: "blob", artSmall1: "circle", artSmall2: "circle", heroPlay: "squircle" };
+const DEFAULT_PREV = { artMain: "scal8", favCovers: "scal8", songCovers: "scal8", nowCover: "scal6", heroPlay: "squircle" };
 
 function openShapePicker(id, backToSettings) {
   const returnFocus = activeSheet ? activeSheet.returnFocus : document.activeElement;

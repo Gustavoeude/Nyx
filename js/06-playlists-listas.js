@@ -202,6 +202,11 @@ function popHeart(song) {
   });
 }
 
+function shapeCls(key) {
+  const s = settings.shapes && settings.shapes[key];
+  return s && s !== "default" ? " shape-" + s : "";
+}
+
 function createSongItem(song, context, opts = {}) {
   const isCurrent = song.id === currentId;
   const item = el("div", "song-item" + (isCurrent ? " playing" : ""));
@@ -210,7 +215,7 @@ function createSongItem(song, context, opts = {}) {
   play.type = "button";
   play.setAttribute("aria-label", "Tocar " + song.name + " — " + song.artist);
 
-  const cover = el("div", "song-cover");
+  const cover = el("div", "song-cover" + shapeCls("songCovers"));
   setCover(cover, song.cover);
 
   if (isCurrent) {
@@ -461,7 +466,7 @@ function renderGroups(container, type) {
     const item = el("div", "song-item");
     const btn = el("button", "song-main");
     btn.type = "button";
-    const cover = el("div", "song-cover");
+    const cover = el("div", "song-cover" + shapeCls("songCovers"));
     const withCover = g.list.find(s => s.cover);
     setCover(cover, withCover ? withCover.cover : null);
     const info = el("div", "song-info");
@@ -625,7 +630,7 @@ function plural(n, one, many) {
 function hCard(song, ctx, sub, rank) {
   const card = el("button", "h-card");
 
-  const cover = el("div", "h-cover");
+  const cover = el("div", "h-cover" + shapeCls("songCovers"));
   setCover(cover, song.cover);
   if (rank) cover.appendChild(el("span", "h-rank", String(rank)));
 
