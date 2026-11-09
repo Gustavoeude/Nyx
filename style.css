@@ -3325,7 +3325,7 @@ body.is-playing .now-play {
   flex: none;
   width: 58px;
   height: 58px;
-  margin-left: 2px;
+  margin-left: auto;
   display: grid;
   place-items: center;
   border-radius: 20px 26px 20px 26px;
