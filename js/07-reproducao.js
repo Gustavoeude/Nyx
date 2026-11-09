@@ -79,6 +79,19 @@ $("nowPlay").addEventListener("click", e => {
   togglePlay();
 });
 
+$("contNext").addEventListener("click", () => {
+  if (!current() && homeMain) playSong(homeMain.id, allIds());
+  else playNext();
+});
+
+$("contWave").addEventListener("click", e => {
+  const d = audio.duration;
+  if (!d || !isFinite(d)) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  audio.currentTime = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * d;
+  updateProgress();
+});
+
 $("heroPlay").addEventListener("click", () => {
   if (!current() && homeMain) playSong(homeMain.id, allIds());
   else togglePlay();

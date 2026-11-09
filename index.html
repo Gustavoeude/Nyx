@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Fontes carregam em segundo plano: a página aparece na hora, mesmo com internet lenta -->
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=45">
+  <link rel="stylesheet" href="style.css?v=47">
   <script>
     /* Primeira instalação: esconde o app até o tutorial abrir (evita ver a tela inicial antes). */
     try {
@@ -49,27 +49,63 @@
     <!-- ============ YOUR MIX ============ -->
     <section class="page active" id="homePage">
       <div class="home-top">
-        <p class="eyebrow home-eyebrow" id="greeting">SUA MÚSICA, SEU UNIVERSO</p>
-        <button class="icon-btn home-settings" id="homeSettings" aria-label="Ajustes">
-          <span class="material-symbols-rounded">settings</span>
-        </button>
-      </div>
-
-      <div class="hero">
-        <div class="hero-copy">
-          <h1>Your<br>Mix</h1>
-          <p id="heroSubtitle">Sua coleção musical</p>
+        <div class="home-title">
+          <h1 class="home-brand">Nyx</h1>
+          <p class="eyebrow home-eyebrow" id="greeting">SUA MÚSICA, SEU UNIVERSO</p>
         </div>
-        <button class="hero-play" id="heroPlay" aria-label="Tocar ou pausar"></button>
+        <div class="home-actions">
+          <button class="icon-btn home-settings" id="homeTheme" aria-label="Alternar tema"></button>
+          <button class="icon-btn home-settings" id="homeSettings" aria-label="Ajustes">
+            <span class="material-symbols-rounded">settings</span>
+          </button>
+        </div>
       </div>
 
-      <div class="artwork">
-        <button class="art-main" id="artMain" aria-label="Tocar música"></button>
-        <button class="art-small art-left" id="artSmall1" aria-label="Tocar música"></button>
-        <button class="art-small art-right" id="artSmall2" aria-label="Tocar música"></button>
+      <div class="home-chips" id="homeChips" role="tablist">
+        <button class="hchip active" data-tab="foryou" role="tab">Para você</button>
+        <button class="hchip" data-tab="recent" role="tab">Recentes</button>
+        <button class="hchip" data-tab="fav" role="tab">Favoritas</button>
+      </div>
+
+      <div class="cont-card" id="contCard">
+        <p class="cont-label">Continuar ouvindo</p>
+        <div class="cont-row">
+          <button class="art-main" id="artMain" aria-label="Tocar música"></button>
+          <div class="cont-info">
+            <strong id="contTitle">Sua coleção musical</strong>
+            <span id="contArtist"></span>
+          </div>
+        </div>
+        <div class="cont-bottom">
+          <div class="wv" id="contWave" role="progressbar" aria-label="Progresso da música">
+            <div class="wv-fill"></div>
+          </div>
+          <button class="hero-play" id="heroPlay" aria-label="Tocar ou pausar"></button>
+          <button class="cont-next" id="contNext" aria-label="Próxima música">
+            <span class="material-symbols-rounded">skip_next</span>
+          </button>
+          <span class="cont-time" id="contTime">0:00 / 0:00</span>
+        </div>
+      </div>
+
+      <div class="fav-card" id="favCard">
+        <button class="fav-head" id="favHead" type="button">
+          <strong>Seus favoritos</strong>
+        </button>
+        <div class="fav-grid">
+          <button class="fav-cov" id="artSmall1" aria-label="Tocar música"></button>
+          <button class="fav-cov" id="artSmall2" aria-label="Tocar música"></button>
+          <button class="fav-cov" id="artSmall3" aria-label="Tocar música"></button>
+          <button class="fav-cov" id="artSmall4" aria-label="Tocar música"></button>
+        </div>
       </div>
 
       <div class="home-stats" id="homeStats" hidden></div>
+
+      <section class="home-section" id="favSection" hidden>
+        <h2 class="page-section-title">Favoritas</h2>
+        <div class="hscroll" id="favList"></div>
+      </section>
 
       <section class="home-section" id="topSection" hidden>
         <h2 class="page-section-title">Mais ouvidas</h2>
@@ -103,10 +139,20 @@
 
     <!-- ============ LIBRARY ============ -->
     <section class="page" id="libraryPage">
-      <div class="page-heading">
-        <p class="eyebrow">SUA COLEÇÃO</p>
-        <h1>Library<span class="accent">.</span></h1>
-        <p id="libraryCount">0 músicas adicionadas</p>
+      <div class="lib-head">
+        <div class="lib-title">
+          <h1>Biblioteca</h1>
+          <p id="libraryCount">0 músicas adicionadas</p>
+        </div>
+        <button class="icon-btn home-settings" id="libraryHeadAdd" aria-label="Adicionar músicas">
+          <span class="material-symbols-rounded">add</span>
+        </button>
+      </div>
+
+      <div class="lib-tabs" id="libTabs" role="tablist">
+        <button class="lib-tab active" data-tab="songs" role="tab">Músicas</button>
+        <button class="lib-tab" data-tab="albums" role="tab">Álbuns</button>
+        <button class="lib-tab" data-tab="artists" role="tab">Artistas</button>
       </div>
 
       <div class="filters" id="filters"></div>
@@ -126,7 +172,7 @@
     <div class="now-cover" id="nowCover"></div>
     <button class="now-info" id="nowInfo" type="button" aria-label="Abrir player completo">
       <strong id="nowTitle">Nenhuma música</strong>
-      <span id="nowArtist">Adicione músicas na Library</span>
+      <span id="nowArtist">Adicione músicas na Biblioteca</span>
     </button>
     <button class="now-lyrics" id="nowLyrics" aria-label="Abrir letras da música atual">
       <span class="material-symbols-rounded" aria-hidden="true">lyrics</span>
@@ -139,16 +185,16 @@
   <!-- Navegação (Material 3 Navigation Bar) -->
   <nav class="bottom-nav">
     <button class="nav-item active" data-target="home" aria-current="page">
-      <span class="nav-icon"><span class="material-symbols-rounded">person</span></span>
-      <small>Your Mix</small>
+      <span class="nav-icon"><span class="material-symbols-rounded">home</span></span>
+      <small>Início</small>
     </button>
     <button class="nav-item" data-target="search">
       <span class="nav-icon"><span class="material-symbols-rounded">search</span></span>
-      <small>Search</small>
+      <small>Buscar</small>
     </button>
     <button class="nav-item" data-target="library">
-      <span class="nav-icon"><span class="material-symbols-rounded">library_music</span></span>
-      <small>Library</small>
+      <span class="nav-icon"><span class="material-symbols-rounded">notes</span></span>
+      <small>Biblioteca</small>
     </button>
     <button class="nav-fab" id="navShuffle" aria-label="Aleatório desligado" aria-pressed="false">
       <span class="material-symbols-rounded">shuffle</span>
@@ -213,14 +259,14 @@
 
   <script src="jsmediatags.min.js?v=32"></script>
   <script src="js/00-erros.js?v=41"></script>
-  <script src="js/01-base.js?v=46"></script>
+  <script src="js/01-base.js?v=47"></script>
   <script src="js/02-player-nativo.js?v=41"></script>
-  <script src="js/03-estado-cor-tema.js?v=43"></script>
+  <script src="js/03-estado-cor-tema.js?v=44"></script>
   <script src="js/04-navegacao-dialogos.js?v=41"></script>
   <script src="js/05-importar.js?v=42"></script>
-  <script src="js/06-playlists-listas.js?v=41"></script>
-  <script src="js/07-reproducao.js?v=41"></script>
-  <script src="js/08-progresso-player-completo.js?v=42"></script>
+  <script src="js/06-playlists-listas.js?v=43"></script>
+  <script src="js/07-reproducao.js?v=42"></script>
+  <script src="js/08-progresso-player-completo.js?v=43"></script>
   <script src="js/09-ajustes.js?v=47"></script>
   <script src="js/10-fontes-letras.js?v=41"></script>
   <script src="js/pasta-monitorada.js?v=2"></script>

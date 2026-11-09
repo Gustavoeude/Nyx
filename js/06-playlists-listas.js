@@ -120,6 +120,12 @@ function openSongMenu(song, opts = {}) {
   }
 
   actions.push({
+    icon: song.favorite ? "favorite_border" : "favorite",
+    label: song.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos",
+    run: () => toggleFavorite(song)
+  });
+
+  actions.push({
     icon: "edit",
     label: song.coverBlob ? "Trocar capa pela galeria" : "Escolher capa da galeria",
     run: () => pickCoverFor(song.id)
@@ -410,12 +416,97 @@ function renderPlaylistBar(playlist, list) {
   bar.append(info, play, rename, del);
 }
 
+function groupKey(song, type) {
+  const raw = type === "albums" ? song.album : song.artist;
+  const v = (raw || "").trim();
+  if (type === "albums") return v || "Sem álbum";
+  return v && !/^(arquivo local|unknown)$/i.test(v) ? v : "Artista desconhecido";
+}
+
+function buildGroups(type) {
+  const map = new Map();
+  songs.forEach(s => {
+    const k = groupKey(s, type);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(s);
+  });
+  return Array.from(map, ([key, list]) => ({ key, list })).sort((a, b) => a.key.localeCompare(b.key, "pt-BR"));
+}
+
+function renderLibTabs() {
+  document.querySelectorAll("#libTabs .lib-tab").forEach(b => {
+    const on = b.dataset.tab === libraryTab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+}
+
+document.querySelectorAll("#libTabs .lib-tab").forEach(b => {
+  b.addEventListener("click", () => {
+    libraryTab = b.dataset.tab;
+    libraryGroup = null;
+    renderLibrary();
+  });
+});
+
+$("libraryHeadAdd").onclick = () => openFilePicker();
+
+function renderGroups(container, type) {
+  const groups = buildGroups(type);
+  if (!groups.length) {
+    showEmpty(container, "Sua biblioteca está vazia", "As músicas que você adicionar aparecerão aqui.", false);
+    return;
+  }
+  groups.forEach((g, i) => {
+    const item = el("div", "song-item");
+    const btn = el("button", "song-main");
+    btn.type = "button";
+    const cover = el("div", "song-cover");
+    const withCover = g.list.find(s => s.cover);
+    setCover(cover, withCover ? withCover.cover : null);
+    const info = el("div", "song-info");
+    info.append(el("strong", "", g.key), el("small", "", plural(g.list.length, "música", "músicas")));
+    btn.append(cover, info);
+    btn.onclick = () => {
+      libraryGroup = { type, key: g.key };
+      renderLibrary();
+    };
+    attachRipple(item);
+    item.appendChild(btn);
+    container.appendChild(item);
+  });
+}
+
 function renderLibrary() {
   const container = $("songList");
   container.innerHTML = "";
+  renderLibTabs();
 
   $("libraryCount").textContent =
     songs.length + (songs.length === 1 ? " música adicionada" : " músicas adicionadas");
+
+  const page = $("libraryPage");
+  page.dataset.tab = libraryTab;
+
+  if (libraryTab !== "songs") {
+    $("playlistBar").hidden = true;
+    const box = $("filters");
+    box.innerHTML = "";
+    if (libraryGroup) {
+      const back = el("button", "filter active");
+      back.appendChild(el("span", "material-symbols-rounded", "arrow_back"));
+      back.appendChild(document.createTextNode(libraryGroup.key));
+      back.onclick = () => { libraryGroup = null; renderLibrary(); };
+      box.appendChild(back);
+      const list = songs.filter(s => groupKey(s, libraryGroup.type) === libraryGroup.key);
+      if (!list.length) { libraryGroup = null; renderLibrary(); return; }
+      const ids = list.map(s => s.id);
+      list.forEach(song => container.appendChild(createSongItem(song, ids)));
+    } else {
+      renderGroups(container, libraryTab);
+    }
+    return;
+  }
 
   const list = librarySongs();
   const playlist = playlists.find(p => p.id === libraryFilter) || null;
@@ -425,26 +516,11 @@ function renderLibrary() {
 
   if (list.length === 0) {
     if (playlist) {
-      showEmpty(
-        container,
-        "Playlist vazia",
-        "Use o menu ⋮ de uma música para adicioná-la aqui.",
-        false
-      );
+      showEmpty(container, "Playlist vazia", "Use o menu ⋮ de uma música para adicioná-la aqui.", false);
     } else if (libraryFilter === "fav") {
-      showEmpty(
-        container,
-        "Nenhuma favorita",
-        "Marque músicas com o coração para encontrá-las aqui.",
-        false
-      );
+      showEmpty(container, "Nenhuma favorita", "Marque músicas com o coração para encontrá-las aqui.", false);
     } else {
-      showEmpty(
-        container,
-        "Sua biblioteca está vazia",
-        "As músicas que você adicionar aparecerão aqui.",
-        false
-      );
+      showEmpty(container, "Sua biblioteca está vazia", "As músicas que você adicionar aparecerão aqui.", false);
     }
     return;
   }
@@ -462,7 +538,25 @@ function renderAll() {
 /* ==========================================================
    Your Mix
    ========================================================== */
-const homeTargets = { artMain: null, artSmall1: null, artSmall2: null };
+const homeTargets = { artMain: null, artSmall1: null, artSmall2: null, artSmall3: null, artSmall4: null };
+let homeTab = "foryou";
+const FAV_IDS = ["artSmall1", "artSmall2", "artSmall3", "artSmall4"];
+
+function renderHomeTab() {
+  $("homePage").dataset.tab = homeTab;
+  document.querySelectorAll("#homeChips .hchip").forEach(b => {
+    const on = b.dataset.tab === homeTab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+}
+
+document.querySelectorAll("#homeChips .hchip").forEach(b => {
+  b.addEventListener("click", () => {
+    homeTab = b.dataset.tab;
+    renderHomeTab();
+  });
+});
 
 function rankedForHome() {
   const arr = songs.slice();
@@ -589,36 +683,43 @@ function renderHomeExtras() {
     .sort((a, b) => b.lastPlayed - a.lastPlayed)
     .slice(0, 8);
   fillRow($("recentSection"), $("recentList"), recent, s => s.artist, false);
+
+  const favList = songs.filter(s => s.favorite);
+  fillRow($("favSection"), $("favList"), favList, s => s.artist, false);
 }
 
 function updateHome() {
   const ranked = rankedForHome();
   const main = current() || ranked[0] || null;
-  const others = ranked.filter(s => s !== main);
-  const pick = i => others[i] || main;
+
+  // favoritas primeiro; se faltar, completa com as mais ouvidas
+  const favs = songs.filter(s => s.favorite);
+  const pool = favs.concat(ranked.filter(s => !s.favorite && s !== main));
+  const picks = FAV_IDS.map((_, i) => pool[i] || null);
 
   homeMain = main;
   homeTargets.artMain = main ? main.id : null;
-  homeTargets.artSmall1 = pick(0) ? pick(0).id : null;
-  homeTargets.artSmall2 = pick(1) ? pick(1).id : null;
-
   setCover($("artMain"), main ? main.cover : null);
-  setCover($("artSmall1"), pick(0) ? pick(0).cover : null);
-  setCover($("artSmall2"), pick(1) ? pick(1).cover : null);
-  [["artMain", main], ["artSmall1", pick(0)], ["artSmall2", pick(1)]].forEach(([id, song]) => {
-    $(id).setAttribute("aria-label", song
-      ? "Tocar " + song.name + " — " + song.artist
-      : "Adicionar músicas");
+  $("artMain").setAttribute("aria-label", main ? "Tocar " + main.name + " — " + main.artist : "Adicionar músicas");
+
+  FAV_IDS.forEach((id, i) => {
+    const song = picks[i];
+    homeTargets[id] = song ? song.id : null;
+    setCover($(id), song ? song.cover : null);
+    $(id).setAttribute("aria-label", song ? "Tocar " + song.name + " — " + song.artist : "Adicionar músicas");
   });
 
-  $("heroSubtitle").textContent = main ? main.name : "Sua coleção musical";
+  $("contTitle").textContent = main ? main.name : "Sua coleção musical";
+  $("contArtist").textContent = main ? main.artist : "Adicione músicas para começar";
+  $("heroSubtitle") && ($("heroSubtitle").textContent = main ? main.name : "");
 
   renderGreeting();
   renderHomeExtras();
+  renderHomeTab();
   updateMiniPlayer();
 }
 
-["artMain", "artSmall1", "artSmall2"].forEach(id => {
+["artMain"].concat(FAV_IDS).forEach(id => {
   $(id).addEventListener("click", () => {
     const songId = homeTargets[id];
 
@@ -632,3 +733,9 @@ function updateHome() {
   });
 });
 
+
+$("favHead").addEventListener("click", () => {
+  libraryFilter = "fav";
+  libraryTab = "songs";
+  openPage("library");
+});

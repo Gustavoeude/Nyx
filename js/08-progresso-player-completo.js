@@ -9,6 +9,11 @@ function updateProgress() {
   const pct = d && isFinite(d) ? (t / d) * 100 : 0;
 
   $("miniProgress").style.width = pct + "%";
+  const cw = $("contWave");
+  if (cw) {
+    cw.style.setProperty("--pct", pct + "%");
+    $("contTime").textContent = fmt(t) + " / " + fmt(d);
+  }
 
   if (!seeking) {
     const seek = $("seek");
