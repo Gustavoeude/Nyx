@@ -3437,3 +3437,9 @@ body:not(.disc) .fp-cover {
 
 /* capa do "Continuar ouvindo": só ganha fundo quando você escolhe uma forma */
 #artMain[class*="shape-"] { background: var(--md-primary); color: var(--md-on-primary); }
+
+/* troca de tema escuro/claro instantânea: sem transições por um instante,
+   senão dezenas de elementos animam a cor ao mesmo tempo e parece lento */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after { transition: none !important; }

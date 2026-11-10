@@ -230,7 +230,12 @@ $("homeTheme").onclick = () => $("themeBtn").click();
 $("themeBtn").onclick = () => {
   manualTheme = document.body.classList.contains("light") ? "dark" : "light";
   lsSet("manualTheme", manualTheme);
+
+  // desliga as transições só durante a troca, para ela ser instantânea
+  const root = document.documentElement;
+  root.classList.add("theme-switching");
   applyTheme();
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
 };
 
 const onSystemThemeChange = () => {
