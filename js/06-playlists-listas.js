@@ -175,6 +175,7 @@ function toggleFavorite(song) {
   song.favorite = !song.favorite;
   dbPut(toRecord(song));
   renderAll();
+  updateHome(); // atualiza "Seus favoritos" na hora
   if (song.id === currentId) updateFullPlayer();
   if (song.favorite) popHeart(song);
 }
@@ -697,9 +698,8 @@ function updateHome() {
   const ranked = rankedForHome();
   const main = current() || ranked[0] || null;
 
-  // favoritas primeiro; se faltar, completa com as mais ouvidas
-  const favs = songs.filter(s => s.favorite);
-  const pool = favs.concat(ranked.filter(s => !s.favorite && s !== main));
+  // só músicas favoritadas aparecem aqui; os espaços sobrando ficam vazios
+  const pool = songs.filter(s => s.favorite);
   const picks = FAV_IDS.map((_, i) => pool[i] || null);
 
   homeMain = main;
@@ -729,7 +729,8 @@ function updateHome() {
     const songId = homeTargets[id];
 
     if (songId === null || !getSong(songId)) {
-      openFilePicker();
+      // com músicas na biblioteca, um espaço vazio de favoritos não faz nada
+      if (!songs.length) openFilePicker();
       return;
     }
 

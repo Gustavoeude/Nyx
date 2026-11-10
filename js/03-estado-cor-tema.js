@@ -46,7 +46,7 @@ function savePlaylists() {
 /* ==========================================================
    Cor dinâmica (Material 3) — extraída da capa
    ========================================================== */
-const DEFAULT_SEED = { h: 173, s: 0.78 };
+const DEFAULT_SEED = { h: 341, s: 0.76 }; // vinho/rosa do tutorial (Blood Bargain)
 const rootStyle = document.documentElement.style;
 
 function rgbToHsl(r, g, b) {

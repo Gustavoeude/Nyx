@@ -5,20 +5,21 @@
 :root {
   color-scheme: dark;
 
-  --md-primary: hsl(215 80% 80%);
-  --md-on-primary: hsl(215 80% 16%);
-  --md-primary-container: hsl(215 60% 28%);
-  --md-on-primary-container: hsl(215 90% 90%);
-  --md-secondary-container: hsl(215 24% 26%);
-  --md-on-secondary-container: hsl(215 32% 90%);
-  --md-surface: hsl(215 20% 7%);
-  --md-surface-container: hsl(215 18% 11%);
-  --md-surface-container-high: hsl(215 16% 15%);
-  --md-surface-container-highest: hsl(215 16% 19%);
-  --md-on-surface: hsl(215 12% 92%);
-  --md-on-surface-variant: hsl(215 10% 72%);
-  --md-outline-variant: hsl(215 10% 30%);
-  --glow: hsl(215 60% 30% / .6);
+  /* cor inicial = paleta "Blood Bargain" do tutorial (vinho com rosa suave) */
+  --md-primary: hsl(341 76% 80%);
+  --md-on-primary: hsl(341 76% 16%);
+  --md-primary-container: hsl(341 57% 28%);
+  --md-on-primary-container: hsl(341 86% 90%);
+  --md-secondary-container: hsl(341 23% 26%);
+  --md-on-secondary-container: hsl(341 30% 90%);
+  --md-surface: hsl(341 19% 7%);
+  --md-surface-container: hsl(341 17% 11%);
+  --md-surface-container-high: hsl(341 15% 15%);
+  --md-surface-container-highest: hsl(341 15% 19%);
+  --md-on-surface: hsl(341 12% 92%);
+  --md-on-surface-variant: hsl(341 10% 72%);
+  --md-outline-variant: hsl(341 10% 30%);
+  --glow: hsl(341 57% 30% / .6);
 
   --shape-s: 12px;
   --shape-m: 16px;
@@ -256,8 +257,8 @@ body[data-page="library"] .topbar {
 }
 
 @keyframes pageEnter {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: .6; }
+  to   { opacity: 1; }
 }
 
 .eyebrow {
@@ -364,6 +365,7 @@ body[data-page="library"] .topbar {
 
 .art-main img,
 .art-small img,
+.fav-cov img,
 .now-cover img,
 .song-cover img,
 .fp-cover img {
@@ -2334,9 +2336,10 @@ main { overflow-x: clip; }
 .page.no-enter { animation: none !important; }
 
 /* ===== v25: sem pisco — o conteúdo nunca fica invisível ao trocar de página ===== */
-@keyframes riseIn { from { translate: 0 14px; scale: .97; } }
+/* sem deslocamento vertical: só um fade leve (antes o conteúdo "descia" e subia) */
+@keyframes riseIn { from { opacity: .35; } }
 @keyframes popIn  { from { scale: .6; rotate: -10deg; } }
-@keyframes pageEnter { from { transform: translateY(8px); } }
+@keyframes pageEnter { from { opacity: .6; } }
 
 
 /* ===== v26: fonte escolhida pelo usuário ===== */
