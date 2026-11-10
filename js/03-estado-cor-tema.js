@@ -14,6 +14,8 @@ let playHistory = [];
 let shuffle = false;
 let repeat = "off"; // off | all | one
 let libraryFilter = "all"; // all | fav | id de playlist
+let libraryTab = "songs"; // songs | albums | artists
+let libraryGroup = null; // { type, key } ao abrir um álbum/artista
 let playlists = lsGet("playlists", []);
 let mixMode = lsGet("mixMode", "plays"); // plays | recent
 let manualTheme = lsGet("manualTheme", null);
@@ -22,7 +24,7 @@ let lyricsView = false;
 let fpOpen = false;
 let homeMain = null;
 let lrcTargetId = null;
-let seed = { h: 215, s: 0.8 };
+let seed = { h: 173, s: 0.78 };
 let settings = Object.assign(
   { accent: "auto", amoled: false, disc: false, name: "", shapes: {}, swipe: true, swipeInvert: false, font: "roboto", autoLyrics: true, autoCovers: true, nativePlayer: true, wallpaper: null, wallpaperOpacity: 0.28, wallpaperBlur: 0 },
   lsGet("settings", {})
@@ -44,7 +46,7 @@ function savePlaylists() {
 /* ==========================================================
    Cor dinâmica (Material 3) — extraída da capa
    ========================================================== */
-const DEFAULT_SEED = { h: 215, s: 0.8 };
+const DEFAULT_SEED = { h: 341, s: 0.76 }; // vinho/rosa do tutorial (Blood Bargain)
 const rootStyle = document.documentElement.style;
 
 function rgbToHsl(r, g, b) {
@@ -128,20 +130,20 @@ function applyPalette() {
   const k = f => Math.round(sat * f);
 
   if (!light) {
-    set("--md-primary", hsl(h, sat, 80));
-    set("--md-on-primary", hsl(h, sat, 16));
-    set("--md-primary-container", hsl(h, k(0.75), 28));
-    set("--md-on-primary-container", hsl(h, Math.min(sat + 10, 100), 90));
-    set("--md-secondary-container", hsl(h, k(0.3), 26));
-    set("--md-on-secondary-container", hsl(h, k(0.4), 90));
+    set("--md-primary", hsl(h, Math.round(sat * 0.88), 52));
+    set("--md-on-primary", hsl(h, Math.min(sat + 10, 100), 10));
+    set("--md-primary-container", hsl(h, sat, 26));
+    set("--md-on-primary-container", hsl(h, 100, 93));
+    set("--md-secondary-container", hsl(h, Math.round(sat * 0.8), 15));
+    set("--md-on-secondary-container", hsl(h, 100, 94));
     const am = settings.amoled;
-    set("--md-surface", am ? "#000000" : hsl(h, k(0.25), 7));
-    set("--md-surface-container", am ? hsl(h, k(0.2), 5) : hsl(h, k(0.22), 11));
-    set("--md-surface-container-high", am ? hsl(h, k(0.18), 9) : hsl(h, k(0.2), 15));
-    set("--md-surface-container-highest", am ? hsl(h, k(0.18), 13) : hsl(h, k(0.2), 19));
-    set("--md-on-surface", hsl(h, 12, 92));
-    set("--md-on-surface-variant", hsl(h, 10, 72));
-    set("--md-outline-variant", hsl(h, 10, 30));
+    set("--md-surface", am ? "#000000" : hsl(h, Math.min(sat + 15, 100), 6));
+    set("--md-surface-container", am ? hsl(h, k(0.6), 5) : hsl(h, k(0.8), 10.5));
+    set("--md-surface-container-high", am ? hsl(h, k(0.6), 9) : hsl(h, k(0.78), 14));
+    set("--md-surface-container-highest", am ? hsl(h, k(0.6), 13) : hsl(h, k(0.75), 18));
+    set("--md-on-surface", hsl(h, 100, 95));
+    set("--md-on-surface-variant", hsl(h, 42, 66));
+    set("--md-outline-variant", hsl(h, 40, 24));
     set("--glow", "hsl(" + h + " " + k(0.75) + "% 30% / " + (settings.amoled ? ".4" : ".6") + ")");
   } else {
     set("--md-primary", hsl(h, sat, 38));
@@ -219,13 +221,21 @@ function applyTheme() {
 
   document.body.classList.toggle("light", light);
   setIcon($("themeBtn"), light ? "dark_mode" : "light_mode");
+  if ($("homeTheme")) setIcon($("homeTheme"), light ? "dark_mode" : "light_mode");
   applyPalette();
 }
+
+$("homeTheme").onclick = () => $("themeBtn").click();
 
 $("themeBtn").onclick = () => {
   manualTheme = document.body.classList.contains("light") ? "dark" : "light";
   lsSet("manualTheme", manualTheme);
+
+  // desliga as transições só durante a troca, para ela ser instantânea
+  const root = document.documentElement;
+  root.classList.add("theme-switching");
   applyTheme();
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
 };
 
 const onSystemThemeChange = () => {

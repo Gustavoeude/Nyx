@@ -632,14 +632,26 @@ window.addEventListener("popstate", () => {
    Formas das bolinhas (segure para personalizar)
    ========================================================== */
 const BUBBLES = {
-  artMain: "Bolinha grande",
-  artSmall1: "Bolinha da esquerda",
-  artSmall2: "Bolinha da direita",
+  artMain: "Capa do Continuar ouvindo",
+  favCovers: "Capas dos favoritos",
+  songCovers: "Capas das músicas (listas)",
+  nowCover: "Capa do mini player",
   heroPlay: "Botão de tocar"
+};
+
+const BUBBLE_SEL = {
+  artMain: "#artMain",
+  favCovers: ".fav-cov",
+  songCovers: ".song-cover, .h-cover",
+  nowCover: "#nowCover",
+  heroPlay: "#heroPlay"
 };
 
 const SHAPES = [
   { id: "default", name: "Padrão" },
+  { id: "scal8", name: "Biscoito 8" },
+  { id: "scal6", name: "Biscoito 6" },
+  { id: "scal5", name: "Biscoito 5" },
   { id: "circle", name: "Círculo" },
   { id: "squircle", name: "Quadrado" },
   { id: "pill", name: "Pílula" },
@@ -694,6 +706,10 @@ function buildClipDefs() {
   add("star", star());
   add("flower", radial(6, 0.39, 0.11));
   add("cookie", radial(12, 0.46, 0.04));
+  // formas do visual M3 Expressive (capas das listas, mini player e Início)
+  add("scal8", radial(8, 0.45, 0.04));
+  add("scal6", radial(6, 0.44, 0.05));
+  add("scal5", radial(5, 0.43, 0.055));
   add(
     "heart",
     "M0.5,0.97 C0.12,0.68 0,0.5 0,0.29 C0,0.11 0.13,0.02 0.27,0.02 C0.37,0.02 0.45,0.07 0.5,0.16 C0.55,0.07 0.63,0.02 0.73,0.02 C0.87,0.02 1,0.11 1,0.29 C1,0.5 0.88,0.68 0.5,0.97 Z"
@@ -705,17 +721,17 @@ buildClipDefs();
 
 function applyShapes() {
   Object.keys(BUBBLES).forEach(id => {
-    const node = $(id);
-    if (!node) return;
-    [...node.classList].forEach(c => {
-      if (c.indexOf("shape-") === 0) node.classList.remove(c);
-    });
     const s = settings.shapes[id];
-    if (s && s !== "default") node.classList.add("shape-" + s);
+    document.querySelectorAll(BUBBLE_SEL[id]).forEach(node => {
+      [...node.classList].forEach(c => {
+        if (c.indexOf("shape-") === 0) node.classList.remove(c);
+      });
+      if (s && s !== "default") node.classList.add("shape-" + s);
+    });
   });
 }
 
-const DEFAULT_PREV = { artMain: "blob", artSmall1: "circle", artSmall2: "circle", heroPlay: "squircle" };
+const DEFAULT_PREV = { artMain: "scal8", favCovers: "scal8", songCovers: "scal8", nowCover: "scal6", heroPlay: "squircle" };
 
 function openShapePicker(id, backToSettings) {
   const returnFocus = activeSheet ? activeSheet.returnFocus : document.activeElement;
