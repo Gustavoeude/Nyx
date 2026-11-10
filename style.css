@@ -249,7 +249,6 @@ body[data-page="library"] .topbar {
 .page {
   display: none;
   min-height: calc(100vh - 220px);
-  animation: pageEnter .35s var(--ease);
 }
 
 .page.active {
@@ -2336,10 +2335,10 @@ main { overflow-x: clip; }
 .page.no-enter { animation: none !important; }
 
 /* ===== v25: sem pisco — o conteúdo nunca fica invisível ao trocar de página ===== */
-/* sem deslocamento vertical: só um fade leve (antes o conteúdo "descia" e subia) */
-@keyframes riseIn { from { opacity: .35; } }
+/* sem deslocamento e sem fade na troca de página: nada desce, sobe ou pisca */
+@keyframes riseIn { from { opacity: 1; } }
 @keyframes popIn  { from { scale: .6; rotate: -10deg; } }
-@keyframes pageEnter { from { opacity: .6; } }
+@keyframes pageEnter { from { opacity: 1; } }
 
 
 /* ===== v26: fonte escolhida pelo usuário ===== */
