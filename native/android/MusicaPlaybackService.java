@@ -39,6 +39,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
 import java.io.File;
@@ -78,7 +79,12 @@ public class MusicaPlaybackService extends MediaSessionService {
         }
     }
 
+    /** Tempo que o player espera o JavaScript responder a um "próxima/anterior" ou ao fim da faixa. */
+    private static final long STUCK_FALLBACK_MS = 4000;
+
     private ExoPlayer player;
+    /** true só quando o app avisou que a lista realmente termina na fila nativa (sem repetir). */
+    private boolean listEnds = false;
     private MediaSession session;
     private PrefetchingBitmapLoader artworkBitmapLoader;
 
@@ -155,7 +161,10 @@ public class MusicaPlaybackService extends MediaSessionService {
                 MAIN.removeCallbacks(ticker);
                 if (isPlaying) MAIN.post(ticker);
             }
-            @Override public void onPlaybackStateChanged(int state) { emitState(null); }
+            @Override public void onPlaybackStateChanged(int state) {
+                emitState(null);
+                if (state == Player.STATE_ENDED && !listEnds) armEndedFallback();
+            }
             @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) { emitState(null); }
             @Override public void onPlayerError(PlaybackException error) {
                 emitState("Não foi possível tocar esta música (" + error.getErrorCodeName() + ")");
@@ -166,6 +175,7 @@ public class MusicaPlaybackService extends MediaSessionService {
                     JSObject o = new JSObject();
                     o.put("id", item.mediaId);
                     o.put("reason", reason);
+                    o.put("ts", System.currentTimeMillis()); // o app descarta eventos velhos (app congelado)
                     k.emit("transition", o);
                 }
                 emitState(null);
@@ -276,14 +286,23 @@ public class MusicaPlaybackService extends MediaSessionService {
         }
 
         private void goNext() {
-            if (super.hasNextMediaItem()) super.seekToNextMediaItem();
-            else action("next");
+            if (super.hasNextMediaItem()) {
+                super.seekToNextMediaItem();
+            } else {
+                action("next");
+                armStuckFallback(true);
+            }
         }
 
         private void goPrevious() {
-            if (getCurrentPosition() > 3000) seekTo(0);
-            else if (super.hasPreviousMediaItem()) super.seekToPreviousMediaItem();
-            else action("previous");
+            if (getCurrentPosition() > 3000) {
+                seekTo(0);
+            } else if (super.hasPreviousMediaItem()) {
+                super.seekToPreviousMediaItem();
+            } else {
+                action("previous");
+                armStuckFallback(false);
+            }
         }
 
         @Override public void seekToNext() { goNext(); }
@@ -297,8 +316,49 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (k != null) {
             JSObject o = new JSObject();
             o.put("action", name);
+            o.put("ts", System.currentTimeMillis()); // evita que toques antigos sejam repetidos ao reabrir o app
             k.emit("action", o);
         }
+    }
+
+    /**
+     * Se o JavaScript estiver congelado (app em segundo plano), o "próxima/anterior" enviado a ele
+     * se perderia e o botão pareceria travado. Se nada mudou depois de um tempo, o próprio player
+     * dá a volta na fila nativa.
+     */
+    private void armStuckFallback(boolean forward) {
+        if (player == null) return;
+        MediaItem before = player.getCurrentMediaItem();
+        final String id = before == null ? "" : before.mediaId;
+        MAIN.postDelayed(() -> {
+            if (player == null) return;
+            MediaItem cur = player.getCurrentMediaItem();
+            if (cur == null || !cur.mediaId.equals(id)) return; // o app respondeu
+            int n = player.getMediaItemCount();
+            if (n == 0) return;
+            player.seekTo(forward ? 0 : n - 1, 0L);
+            resumeAfterWrap();
+        }, STUCK_FALLBACK_MS);
+    }
+
+    /** Fim da fila nativa sem o app responder: recomeça a fila em vez de ficar parado. */
+    private void armEndedFallback() {
+        if (player == null) return;
+        MediaItem before = player.getCurrentMediaItem();
+        final String id = before == null ? "" : before.mediaId;
+        MAIN.postDelayed(() -> {
+            if (player == null || listEnds) return;
+            if (player.getPlaybackState() != Player.STATE_ENDED) return;
+            MediaItem cur = player.getCurrentMediaItem();
+            if (cur == null || !cur.mediaId.equals(id)) return; // o app respondeu
+            player.seekTo(0, 0L);
+            resumeAfterWrap();
+        }, STUCK_FALLBACK_MS);
+    }
+
+    private void resumeAfterWrap() {
+        if (player.getPlaybackState() == Player.STATE_IDLE) player.prepare();
+        player.setPlayWhenReady(true);
     }
 
     // ---------- comandos (sempre chamados na thread principal via run) ----------
@@ -330,8 +390,10 @@ public class MusicaPlaybackService extends MediaSessionService {
 
     private void preloadArtwork(List<MediaItem> items) {
         if (artworkBitmapLoader == null || items == null) return;
-        for (MediaItem item : items) {
-            Uri artworkUri = item.mediaMetadata.artworkUri;
+        // só as primeiras: o cache guarda poucas capas e uma fila grande expulsaria as mais próximas
+        int n = Math.min(items.size(), 5);
+        for (int i = 0; i < n; i++) {
+            Uri artworkUri = items.get(i).mediaMetadata.artworkUri;
             if (artworkUri != null) artworkBitmapLoader.preload(artworkUri);
         }
     }
@@ -392,6 +454,7 @@ public class MusicaPlaybackService extends MediaSessionService {
             throw new IllegalArgumentException("Arquivo de música não encontrado no armazenamento do app.");
         }
         player.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        listEnds = false;
         preloadArtwork(items);
         player.setMediaItems(items, 0, Math.max(0L, positionMs));
         player.prepare();
@@ -399,26 +462,76 @@ public class MusicaPlaybackService extends MediaSessionService {
         emitState(null);
     }
 
-    void setUpcoming(String afterId, List<MediaItem> items, boolean repeatOne) {
-        player.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+    /**
+     * @param loop true quando a lista do app continua além da fila nativa: a fila gira em círculo,
+     *             então nunca fica sem próxima música enquanto o app está congelado em segundo plano.
+     *             false só quando a lista realmente termina (o player para no fim, como esperado).
+     */
+    void setUpcoming(String afterId, List<MediaItem> items, boolean repeatOne, boolean loop) {
+        applyLoop(repeatOne, loop);
         MediaItem cur = player.getCurrentMediaItem();
         if (cur == null || !cur.mediaId.equals(afterId)) return; // o app se atualiza pelo evento "transition"
         int idx = player.getCurrentMediaItemIndex();
         int n = player.getMediaItemCount();
         if (n > idx + 1) player.removeMediaItems(idx + 1, n);
-        // mantém as últimas 5 já tocadas: "anterior" funciona sem depender do JavaScript
-        if (idx > 5) player.removeMediaItems(0, idx - 5);
+        // mantém as últimas 20 já tocadas: "anterior" funciona sem depender do JavaScript
+        if (idx > 20) player.removeMediaItems(0, idx - 20);
         if (!items.isEmpty()) {
             preloadArtwork(items);
             player.addMediaItems(items);
         }
     }
 
+    private void applyLoop(boolean repeatOne, boolean loop) {
+        player.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE
+                : loop ? Player.REPEAT_MODE_ALL : Player.REPEAT_MODE_OFF);
+        listEnds = !repeatOne && !loop;
+    }
+
+    /** Ids das músicas que já estão na fila nativa depois da atual (o app só envia as que faltam). */
+    JSObject queueObject() {
+        JSObject o = new JSObject();
+        JSArray ids = new JSArray();
+        MediaItem cur = player.getCurrentMediaItem();
+        o.put("id", cur == null ? "" : cur.mediaId);
+        int idx = player.getCurrentMediaItemIndex();
+        int n = player.getMediaItemCount();
+        for (int i = idx + 1; i < n; i++) ids.put(player.getMediaItemAt(i).mediaId);
+        o.put("ids", ids);
+        return o;
+    }
+
+    /** Mantém só as primeiras "keep" músicas depois da atual; o resto é reenviado em seguida. */
+    void cutUpcoming(String afterId, int keep, boolean repeatOne, boolean loop) {
+        applyLoop(repeatOne, loop);
+        MediaItem cur = player.getCurrentMediaItem();
+        if (cur == null || !cur.mediaId.equals(afterId)) return;
+        int idx = player.getCurrentMediaItemIndex();
+        int n = player.getMediaItemCount();
+        int from = idx + 1 + Math.max(0, keep);
+        if (n > from) player.removeMediaItems(from, n);
+        if (idx > 20) player.removeMediaItems(0, idx - 20);
+    }
+
+    /** Acrescenta uma música ao fim da fila, só se o fim da fila ainda for a música esperada. */
+    void appendUpcoming(String prevId, List<MediaItem> items, boolean loop) {
+        if (items.isEmpty()) return;
+        int n = player.getMediaItemCount();
+        if (n == 0) return;
+        if (!player.getMediaItemAt(n - 1).mediaId.equals(prevId)) return;
+        if (n - player.getCurrentMediaItemIndex() <= 6) preloadArtwork(items);
+        player.addMediaItems(items);
+        if (loop && player.getRepeatMode() == Player.REPEAT_MODE_OFF) player.setRepeatMode(Player.REPEAT_MODE_ALL);
+    }
+
     void play() { player.play(); }
     void pause() { player.pause(); }
     void seek(long ms) { player.seekTo(Math.max(0L, ms)); }
     void rate(float r) { if (r > 0f && r <= 4f) player.setPlaybackSpeed(r); }
-    void repeatOne(boolean one) { player.setRepeatMode(one ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF); }
+    void repeatOne(boolean one) {
+        if (one) player.setRepeatMode(Player.REPEAT_MODE_ONE);
+        else if (player.getRepeatMode() == Player.REPEAT_MODE_ONE) player.setRepeatMode(Player.REPEAT_MODE_ALL);
+    }
     /** Botão X da notificação: para a música e tira o card. */
     void closeFromNotification() {
         try {

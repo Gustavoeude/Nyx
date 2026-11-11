@@ -280,6 +280,7 @@ public class MusicaPlugin extends Plugin {
             JSObject o = new JSObject();
             o.put("action", action);
             o.put("position", positionMs < 0 ? 0 : positionMs / 1000.0);
+            o.put("ts", System.currentTimeMillis());
             notifyListeners("action", o);
         };
     }
@@ -517,10 +518,48 @@ public class MusicaPlugin extends Plugin {
         final List<MediaItem> list = items(call);
         final String after = call.getString("afterId", "");
         final boolean one = Boolean.TRUE.equals(call.getBoolean("repeatOne", false));
+        final boolean loop = Boolean.TRUE.equals(call.getBoolean("loop", false));
         MusicaPlaybackService.run(getContext(), s -> {
-            s.setUpcoming(after, list, one);
+            s.setUpcoming(after, list, one, loop);
             call.resolve();
         }, e -> call.reject("Não foi possível atualizar a fila: " + e.getMessage()));
+    }
+
+    @PluginMethod
+    public void getQueue(PluginCall call) {
+        MusicaPlaybackService s = MusicaPlaybackService.instance;
+        if (s == null) {
+            JSObject o = new JSObject();
+            o.put("id", "");
+            o.put("ids", new JSArray());
+            call.resolve(o);
+            return;
+        }
+        MusicaPlaybackService.run(getContext(), svc -> call.resolve(svc.queueObject()),
+                e -> call.reject("Não foi possível consultar a fila: " + e.getMessage()));
+    }
+
+    @PluginMethod
+    public void cutUpcoming(PluginCall call) {
+        final String after = call.getString("afterId", "");
+        final int keep = call.getInt("keep", 0);
+        final boolean one = Boolean.TRUE.equals(call.getBoolean("repeatOne", false));
+        final boolean loop = Boolean.TRUE.equals(call.getBoolean("loop", false));
+        MusicaPlaybackService.run(getContext(), s -> {
+            s.cutUpcoming(after, keep, one, loop);
+            call.resolve();
+        }, e -> call.reject("Não foi possível ajustar a fila: " + e.getMessage()));
+    }
+
+    @PluginMethod
+    public void appendUpcoming(PluginCall call) {
+        final List<MediaItem> list = items(call);
+        final String prev = call.getString("prevId", "");
+        final boolean loop = Boolean.TRUE.equals(call.getBoolean("loop", false));
+        MusicaPlaybackService.run(getContext(), s -> {
+            s.appendUpcoming(prev, list, loop);
+            call.resolve();
+        }, e -> call.reject("Não foi possível acrescentar à fila: " + e.getMessage()));
     }
 
     @PluginMethod

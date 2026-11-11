@@ -389,8 +389,19 @@ function callNativeMedia(method, payload) {
 }
 
 // botões da notificação, da tela de bloqueio e dos fones
+// Eventos do Android que ficaram esperando com o app congelado chegam todos juntos ao reabrir.
+// Toques antigos são descartados (senão passam várias músicas de uma vez) e o estado real é relido.
+const NATIVE_EVENT_MAX_AGE_MS = 2000;
+function isStaleNativeEvent(e) {
+  return !!(e && typeof e.ts === "number" && Date.now() - e.ts > NATIVE_EVENT_MAX_AGE_MS);
+}
+
 if (MN && MN.addListener) {
   MN.addListener("action", e => {
+    if (isStaleNativeEvent(e)) {
+      if (nativeMode) nativeResync(false);
+      return;
+    }
     switch (e && e.action) {
       case "play":
         if (currentId === null) togglePlay();
@@ -420,6 +431,7 @@ const nativeFiles = new Map(); // id -> { path, size }
 const nativeCopyJobs = new Map();
 const nativeCovers = new Map(); // id -> { url, path }
 const NATIVE_CACHE_BYTES = 2e9; // limite de espaço das músicas copiadas
+const NATIVE_LOOKAHEAD = 30; // quantas próximas músicas ficam na fila do player nativo
 let nativeToken = 0;
 let nativeUpTimer = 0;
 
@@ -546,7 +558,7 @@ function upcomingIds(n) {
 function nativeRefreshUpcoming() {
   if (!nativeMode) return;
   clearTimeout(nativeUpTimer);
-  nativeUpTimer = setTimeout(nativePushUpcoming, 250);
+  nativeUpTimer = setTimeout(nativePushUpcoming, 60);
 }
 
 async function nativePushUpcoming() {
@@ -558,15 +570,45 @@ async function nativePushUpcoming() {
       await MN.setUpcoming({ afterId: String(startId), items: [], repeatOne: true });
       return;
     }
-    const ids = upcomingIds(5);
-    const items = [];
-    for (const id of ids) {
-      const s = getSong(id);
-      if (!s || !s.file) continue;
-      items.push(await nativeItem(s));
-      if (currentId !== startId) return; // a música mudou no meio: um novo envio já foi agendado
+    // Fila longa e que cresce música a música: com o app em segundo plano o JavaScript pode
+    // parar a qualquer momento, e o que já foi enviado ao player nativo precisa bastar sozinho.
+    const planned = upcomingIds(NATIVE_LOOKAHEAD);
+    // a lista continua além da fila nativa? então ela gira em círculo e nunca acaba sozinha
+    const loop = shuffle || repeat === "all" || planned.length >= NATIVE_LOOKAHEAD;
+
+    // o que o player nativo já tem na fila: só falta enviar o resto (sem copiar tudo de novo)
+    let have = [];
+    try {
+      const st = await MN.getQueue();
+      if (st && String(st.id) === String(startId) && Array.isArray(st.ids)) have = st.ids.map(String);
+    } catch (e) { logErr("reproducao:getQueue", e); }
+    if (currentId !== startId) return;
+
+    let wanted = planned.filter(id => { const s = getSong(id); return s && s.file; });
+    if (shuffle && have.length) {
+      // no aleatório, mantém a ordem já enviada e só completa com novas sorteadas
+      const byId = new Map(songs.map(s => [String(s.id), s]));
+      const kept = have.map(h => byId.get(h)).filter(s => s && s.file && s.id !== currentId).map(s => s.id);
+      const taken = new Set(kept.map(String));
+      const extra = wanted.filter(id => !taken.has(String(id)));
+      wanted = kept.concat(extra).slice(0, NATIVE_LOOKAHEAD);
     }
-    await MN.setUpcoming({ afterId: String(startId), items, repeatOne: false });
+
+    let keep = 0;
+    while (keep < have.length && keep < wanted.length && String(wanted[keep]) === have[keep]) keep++;
+    await MN.cutUpcoming({ afterId: String(startId), keep, repeatOne: false, loop });
+
+    let prev = keep > 0 ? String(wanted[keep - 1]) : String(startId);
+    for (let i = keep; i < wanted.length; i++) {
+      const song = getSong(wanted[i]);
+      if (!song) continue;
+      const item = await nativeItem(song);
+      if (currentId !== startId) return; // a música mudou no meio: um novo envio já foi agendado
+      // cada música entra na fila nativa assim que fica pronta
+      await MN.appendUpcoming({ prevId: prev, items: [item], loop });
+      prev = String(wanted[i]);
+    }
+    const ids = wanted;
     MN.trim({ maxBytes: NATIVE_CACHE_BYTES, keep: [startId, ...ids].map(String) });
   } catch (e) {
     console.error(e);
@@ -608,7 +650,10 @@ async function nativeResync(silent) {
 
 if (nativeMode) {
   MN.addListener("state", st => audio.apply(st));
-  MN.addListener("transition", e => onNativeTransition(e && e.id));
+  MN.addListener("transition", e => {
+    if (isStaleNativeEvent(e)) { nativeResync(false); return; }
+    onNativeTransition(e && e.id);
+  });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) nativeResync(false);
   });
