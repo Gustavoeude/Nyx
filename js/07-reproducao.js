@@ -573,6 +573,8 @@ async function nativePushUpcoming() {
     // Fila longa: com o app em segundo plano o JavaScript fica congelado e não consegue
     // reabastecer; se a fila nativa acabar, "próxima" e o fim da música deixam de funcionar.
     const ids = upcomingIds(NATIVE_LOOKAHEAD);
+    // a lista continua além da fila nativa? então ela gira em círculo e nunca acaba sozinha
+    const loop = shuffle || repeat === "all" || ids.length >= NATIVE_LOOKAHEAD;
     const items = [];
     let sent = 0;
     for (const id of ids) {
@@ -582,12 +584,12 @@ async function nativePushUpcoming() {
       if (currentId !== startId) return; // a música mudou no meio: um novo envio já foi agendado
       // envia logo as primeiras para a próxima música já estar pronta; o resto entra depois
       if (sent === 0 && items.length === 5) {
-        await MN.setUpcoming({ afterId: String(startId), items: items.slice(), repeatOne: false });
+        await MN.setUpcoming({ afterId: String(startId), items: items.slice(), repeatOne: false, loop });
         sent = items.length;
       }
     }
     if (items.length > sent) {
-      await MN.setUpcoming({ afterId: String(startId), items, repeatOne: false });
+      await MN.setUpcoming({ afterId: String(startId), items, repeatOne: false, loop });
     }
     MN.trim({ maxBytes: NATIVE_CACHE_BYTES, keep: [startId, ...ids].map(String) });
   } catch (e) {

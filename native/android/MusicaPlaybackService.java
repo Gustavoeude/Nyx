@@ -403,8 +403,14 @@ public class MusicaPlaybackService extends MediaSessionService {
         emitState(null);
     }
 
-    void setUpcoming(String afterId, List<MediaItem> items, boolean repeatOne) {
-        player.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+    /**
+     * @param loop true quando a lista do app continua além da fila nativa: a fila gira em círculo,
+     *             então nunca fica sem próxima música enquanto o app está congelado em segundo plano.
+     *             false só quando a lista realmente termina (o player para no fim, como esperado).
+     */
+    void setUpcoming(String afterId, List<MediaItem> items, boolean repeatOne, boolean loop) {
+        player.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE
+                : loop ? Player.REPEAT_MODE_ALL : Player.REPEAT_MODE_OFF);
         MediaItem cur = player.getCurrentMediaItem();
         if (cur == null || !cur.mediaId.equals(afterId)) return; // o app se atualiza pelo evento "transition"
         int idx = player.getCurrentMediaItemIndex();
@@ -422,7 +428,10 @@ public class MusicaPlaybackService extends MediaSessionService {
     void pause() { player.pause(); }
     void seek(long ms) { player.seekTo(Math.max(0L, ms)); }
     void rate(float r) { if (r > 0f && r <= 4f) player.setPlaybackSpeed(r); }
-    void repeatOne(boolean one) { player.setRepeatMode(one ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF); }
+    void repeatOne(boolean one) {
+        if (one) player.setRepeatMode(Player.REPEAT_MODE_ONE);
+        else if (player.getRepeatMode() == Player.REPEAT_MODE_ONE) player.setRepeatMode(Player.REPEAT_MODE_ALL);
+    }
     /** Botão X da notificação: para a música e tira o card. */
     void closeFromNotification() {
         try {

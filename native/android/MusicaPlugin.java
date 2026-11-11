@@ -518,8 +518,9 @@ public class MusicaPlugin extends Plugin {
         final List<MediaItem> list = items(call);
         final String after = call.getString("afterId", "");
         final boolean one = Boolean.TRUE.equals(call.getBoolean("repeatOne", false));
+        final boolean loop = Boolean.TRUE.equals(call.getBoolean("loop", false));
         MusicaPlaybackService.run(getContext(), s -> {
-            s.setUpcoming(after, list, one);
+            s.setUpcoming(after, list, one, loop);
             call.resolve();
         }, e -> call.reject("Não foi possível atualizar a fila: " + e.getMessage()));
     }
