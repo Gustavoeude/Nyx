@@ -158,6 +158,21 @@ function openSongMenu(song, opts = {}) {
     });
   }
 
+  if (opts.player) {
+    actions.push({
+      icon: "bedtime",
+      label: "Temporizador de desligar",
+      run: () => openSleepTimerSheet()
+    });
+    if (MN) {
+      actions.push({
+        icon: "graphic_eq",
+        label: "Equalizador",
+        run: () => openSettings("equalizador")
+      });
+    }
+  }
+
   actions.push({
     icon: "delete",
     label: "Excluir música",
@@ -423,9 +438,10 @@ function renderPlaylistBar(playlist, list) {
 }
 
 function groupKey(song, type) {
-  const raw = type === "albums" ? song.album : song.artist;
+  const raw = type === "albums" ? song.album : type === "genres" ? song.genre : song.artist;
   const v = (raw || "").trim();
   if (type === "albums") return v || "Sem álbum";
+  if (type === "genres") return v || "Sem gênero";
   return v && !/^(arquivo local|unknown)$/i.test(v) ? v : "Artista desconhecido";
 }
 

@@ -109,6 +109,26 @@ function fmt(t) {
   return m + ":" + String(s).padStart(2, "0");
 }
 
+// Gêneros numerados do ID3v1 (o número vira o nome)
+const ID3_GENRES = ["Blues","Classic Rock","Country","Dance","Disco","Funk","Grunge","Hip-Hop","Jazz","Metal","New Age","Oldies","Other","Pop","R&B","Rap","Reggae","Rock","Techno","Industrial","Alternative","Ska","Death Metal","Pranks","Soundtrack","Euro-Techno","Ambient","Trip-Hop","Vocal","Jazz+Funk","Fusion","Trance","Classical","Instrumental","Acid","House","Game","Sound Clip","Gospel","Noise","Alternative Rock","Bass","Soul","Punk","Space","Meditative","Instrumental Pop","Instrumental Rock","Ethnic","Gothic","Darkwave","Techno-Industrial","Electronic","Pop-Folk","Eurodance","Dream","Southern Rock","Comedy","Cult","Gangsta","Top 40","Christian Rap","Pop/Funk","Jungle","Native American","Cabaret","New Wave","Psychedelic","Rave","Showtunes","Trailer","Lo-Fi","Tribal","Acid Punk","Acid Jazz","Polka","Retro","Musical","Rock & Roll","Hard Rock"];
+
+// Limpa o texto do gênero vindo da etiqueta: "(13)", "(17)Rock", "13" ou "Rock; Pop"
+function cleanGenre(raw) {
+  if (raw === undefined || raw === null) return "";
+  let g = String(raw).replace(/\u0000/g, " ").trim();
+  // referências numéricas no começo: "(17)", "(9)(131)Metal"
+  const refs = [];
+  g = g.replace(/^(?:\(\d{1,3}\)\s*)+/, m => {
+    (m.match(/\d{1,3}/g) || []).forEach(n => refs.push(Number(n)));
+    return "";
+  }).trim();
+  if (!g && refs.length) g = ID3_GENRES[refs[0]] || "";
+  if (/^\d{1,3}$/.test(g)) g = ID3_GENRES[Number(g)] || "";
+  g = g.split(";")[0].trim();
+  if (!g || /^(unknown|desconhecido|other|outro)$/i.test(g)) return "";
+  return g.length > 40 ? g.slice(0, 40) : g;
+}
+
 function lsGet(key, fallback) {
   let value;
   try {
@@ -251,6 +271,7 @@ function toRecord(song) {
     name: song.name,
     artist: song.artist,
     album: song.album || "",
+    genre: song.genre || "",
     sourceKey: song.sourceKey || fileIdentity(song.file),
     favorite: song.favorite,
     file: song.file,
@@ -282,6 +303,7 @@ function makeSong(r) {
     name: r.name,
     artist: r.artist,
     album: r.album || "",
+    genre: r.genre || "",
     sourceKey: r.sourceKey || fileIdentity(r.file),
     favorite: !!r.favorite,
     file: r.file,

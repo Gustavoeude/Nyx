@@ -44,6 +44,7 @@ const missingPermissions = [
   "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
   "android.permission.POST_NOTIFICATIONS",
   "android.permission.WAKE_LOCK",
+  "android.permission.MODIFY_AUDIO_SETTINGS",
   "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
 ].filter(permission => !xml.includes('"' + permission + '"'));
 

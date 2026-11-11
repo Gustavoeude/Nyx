@@ -263,7 +263,7 @@ $("fpRepeat").onclick = () => {
 
 $("fpMenu").onclick = () => {
   const song = current();
-  if (song) openSongMenu(song);
+  if (song) openSongMenu(song, { player: true });
 };
 
 $("fpLyricsBtn").onclick = () => {

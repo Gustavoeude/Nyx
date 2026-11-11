@@ -430,6 +430,15 @@ function pageBiblioteca() {
   permRow.onclick = () => openPermissions(false);
   sec.appendChild(permRow);
   out.push(sec);
+
+  const genreSec = el("div", "set-sec");
+  const genreRow = el("button", "set-row");
+  const genreText = el("div", "set-row-text");
+  genreText.append(el("strong", "", "Ler gêneros das músicas"), el("span", "", "Procura o gênero nas etiquetas das músicas que já estão na biblioteca"));
+  genreRow.append(genreText, el("span", "material-symbols-rounded", "category"));
+  genreRow.onclick = () => scanGenres(true);
+  genreSec.appendChild(genreRow);
+  out.push(genreSec);
   return out;
 }
 
@@ -440,7 +449,9 @@ function pageReproducao() {
       switchRow("Player nativo (segundo plano mais estável)", "Toca pelo Android, mesmo com o app congelado. Feche e abra o app depois de mudar.", "nativePlayer")
     );
   }
-  return [sec];
+  const out = [];
+  if (sec.children.length) out.push(sec);
+  return out.concat(audioExtrasSections());
 }
 
 function pageComportamento() {
@@ -542,7 +553,8 @@ function renderSettingsPage(box, go) {
       catRow("library_music", 205, "Biblioteca", "Importar músicas e pastas", () => go("biblioteca")),
       catRow("light_mode", 335, "Aparência", "Cor do app, fonte, preto total, capa em disco", () => go("aparencia"))
     );
-    if (MN) list.appendChild(catRow("music_note", 350, "Reprodução", "Player nativo e segundo plano", () => go("reproducao")));
+    list.appendChild(catRow("translate", 265, "Idioma", languageSummary(), () => go("idioma")));
+    list.appendChild(catRow("music_note", 350, "Reprodução", MN ? "Temporizador, equalizador e player nativo" : "Temporizador de desligar", () => go("reproducao")));
     list.append(
       catRow("settings", 230, "Comportamento", "Deslizar entre páginas e gestos", () => go("comportamento")),
       catRow("lyrics", 175, "Privacidade", "Buscas online de letras e capas", () => go("privacidade")),
