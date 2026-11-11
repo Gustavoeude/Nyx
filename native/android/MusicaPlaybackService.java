@@ -166,6 +166,7 @@ public class MusicaPlaybackService extends MediaSessionService {
                     JSObject o = new JSObject();
                     o.put("id", item.mediaId);
                     o.put("reason", reason);
+                    o.put("ts", System.currentTimeMillis()); // o app descarta eventos velhos (app congelado)
                     k.emit("transition", o);
                 }
                 emitState(null);
@@ -297,6 +298,7 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (k != null) {
             JSObject o = new JSObject();
             o.put("action", name);
+            o.put("ts", System.currentTimeMillis()); // evita que toques antigos sejam repetidos ao reabrir o app
             k.emit("action", o);
         }
     }
@@ -330,8 +332,10 @@ public class MusicaPlaybackService extends MediaSessionService {
 
     private void preloadArtwork(List<MediaItem> items) {
         if (artworkBitmapLoader == null || items == null) return;
-        for (MediaItem item : items) {
-            Uri artworkUri = item.mediaMetadata.artworkUri;
+        // só as primeiras: o cache guarda poucas capas e uma fila grande expulsaria as mais próximas
+        int n = Math.min(items.size(), 5);
+        for (int i = 0; i < n; i++) {
+            Uri artworkUri = items.get(i).mediaMetadata.artworkUri;
             if (artworkUri != null) artworkBitmapLoader.preload(artworkUri);
         }
     }
@@ -406,8 +410,8 @@ public class MusicaPlaybackService extends MediaSessionService {
         int idx = player.getCurrentMediaItemIndex();
         int n = player.getMediaItemCount();
         if (n > idx + 1) player.removeMediaItems(idx + 1, n);
-        // mantém as últimas 5 já tocadas: "anterior" funciona sem depender do JavaScript
-        if (idx > 5) player.removeMediaItems(0, idx - 5);
+        // mantém as últimas 20 já tocadas: "anterior" funciona sem depender do JavaScript
+        if (idx > 20) player.removeMediaItems(0, idx - 20);
         if (!items.isEmpty()) {
             preloadArtwork(items);
             player.addMediaItems(items);

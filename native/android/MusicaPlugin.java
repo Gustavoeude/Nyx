@@ -280,6 +280,7 @@ public class MusicaPlugin extends Plugin {
             JSObject o = new JSObject();
             o.put("action", action);
             o.put("position", positionMs < 0 ? 0 : positionMs / 1000.0);
+            o.put("ts", System.currentTimeMillis());
             notifyListeners("action", o);
         };
     }

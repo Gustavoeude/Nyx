@@ -389,8 +389,19 @@ function callNativeMedia(method, payload) {
 }
 
 // botões da notificação, da tela de bloqueio e dos fones
+// Eventos do Android que ficaram esperando com o app congelado chegam todos juntos ao reabrir.
+// Toques antigos são descartados (senão passam várias músicas de uma vez) e o estado real é relido.
+const NATIVE_EVENT_MAX_AGE_MS = 2000;
+function isStaleNativeEvent(e) {
+  return !!(e && typeof e.ts === "number" && Date.now() - e.ts > NATIVE_EVENT_MAX_AGE_MS);
+}
+
 if (MN && MN.addListener) {
   MN.addListener("action", e => {
+    if (isStaleNativeEvent(e)) {
+      if (nativeMode) nativeResync(false);
+      return;
+    }
     switch (e && e.action) {
       case "play":
         if (currentId === null) togglePlay();
@@ -420,6 +431,7 @@ const nativeFiles = new Map(); // id -> { path, size }
 const nativeCopyJobs = new Map();
 const nativeCovers = new Map(); // id -> { url, path }
 const NATIVE_CACHE_BYTES = 2e9; // limite de espaço das músicas copiadas
+const NATIVE_LOOKAHEAD = 30; // quantas próximas músicas ficam na fila do player nativo
 let nativeToken = 0;
 let nativeUpTimer = 0;
 
@@ -558,15 +570,25 @@ async function nativePushUpcoming() {
       await MN.setUpcoming({ afterId: String(startId), items: [], repeatOne: true });
       return;
     }
-    const ids = upcomingIds(5);
+    // Fila longa: com o app em segundo plano o JavaScript fica congelado e não consegue
+    // reabastecer; se a fila nativa acabar, "próxima" e o fim da música deixam de funcionar.
+    const ids = upcomingIds(NATIVE_LOOKAHEAD);
     const items = [];
+    let sent = 0;
     for (const id of ids) {
       const s = getSong(id);
       if (!s || !s.file) continue;
       items.push(await nativeItem(s));
       if (currentId !== startId) return; // a música mudou no meio: um novo envio já foi agendado
+      // envia logo as primeiras para a próxima música já estar pronta; o resto entra depois
+      if (sent === 0 && items.length === 5) {
+        await MN.setUpcoming({ afterId: String(startId), items: items.slice(), repeatOne: false });
+        sent = items.length;
+      }
     }
-    await MN.setUpcoming({ afterId: String(startId), items, repeatOne: false });
+    if (items.length > sent) {
+      await MN.setUpcoming({ afterId: String(startId), items, repeatOne: false });
+    }
     MN.trim({ maxBytes: NATIVE_CACHE_BYTES, keep: [startId, ...ids].map(String) });
   } catch (e) {
     console.error(e);
@@ -608,7 +630,10 @@ async function nativeResync(silent) {
 
 if (nativeMode) {
   MN.addListener("state", st => audio.apply(st));
-  MN.addListener("transition", e => onNativeTransition(e && e.id));
+  MN.addListener("transition", e => {
+    if (isStaleNativeEvent(e)) { nativeResync(false); return; }
+    onNativeTransition(e && e.id);
+  });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) nativeResync(false);
   });
