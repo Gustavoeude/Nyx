@@ -558,7 +558,7 @@ function upcomingIds(n) {
 function nativeRefreshUpcoming() {
   if (!nativeMode) return;
   clearTimeout(nativeUpTimer);
-  nativeUpTimer = setTimeout(nativePushUpcoming, 250);
+  nativeUpTimer = setTimeout(nativePushUpcoming, 60);
 }
 
 async function nativePushUpcoming() {
@@ -570,27 +570,45 @@ async function nativePushUpcoming() {
       await MN.setUpcoming({ afterId: String(startId), items: [], repeatOne: true });
       return;
     }
-    // Fila longa: com o app em segundo plano o JavaScript fica congelado e não consegue
-    // reabastecer; se a fila nativa acabar, "próxima" e o fim da música deixam de funcionar.
-    const ids = upcomingIds(NATIVE_LOOKAHEAD);
+    // Fila longa e que cresce música a música: com o app em segundo plano o JavaScript pode
+    // parar a qualquer momento, e o que já foi enviado ao player nativo precisa bastar sozinho.
+    const planned = upcomingIds(NATIVE_LOOKAHEAD);
     // a lista continua além da fila nativa? então ela gira em círculo e nunca acaba sozinha
-    const loop = shuffle || repeat === "all" || ids.length >= NATIVE_LOOKAHEAD;
-    const items = [];
-    let sent = 0;
-    for (const id of ids) {
-      const s = getSong(id);
-      if (!s || !s.file) continue;
-      items.push(await nativeItem(s));
+    const loop = shuffle || repeat === "all" || planned.length >= NATIVE_LOOKAHEAD;
+
+    // o que o player nativo já tem na fila: só falta enviar o resto (sem copiar tudo de novo)
+    let have = [];
+    try {
+      const st = await MN.getQueue();
+      if (st && String(st.id) === String(startId) && Array.isArray(st.ids)) have = st.ids.map(String);
+    } catch (e) { logErr("reproducao:getQueue", e); }
+    if (currentId !== startId) return;
+
+    let wanted = planned.filter(id => { const s = getSong(id); return s && s.file; });
+    if (shuffle && have.length) {
+      // no aleatório, mantém a ordem já enviada e só completa com novas sorteadas
+      const byId = new Map(songs.map(s => [String(s.id), s]));
+      const kept = have.map(h => byId.get(h)).filter(s => s && s.file && s.id !== currentId).map(s => s.id);
+      const taken = new Set(kept.map(String));
+      const extra = wanted.filter(id => !taken.has(String(id)));
+      wanted = kept.concat(extra).slice(0, NATIVE_LOOKAHEAD);
+    }
+
+    let keep = 0;
+    while (keep < have.length && keep < wanted.length && String(wanted[keep]) === have[keep]) keep++;
+    await MN.cutUpcoming({ afterId: String(startId), keep, repeatOne: false, loop });
+
+    let prev = keep > 0 ? String(wanted[keep - 1]) : String(startId);
+    for (let i = keep; i < wanted.length; i++) {
+      const song = getSong(wanted[i]);
+      if (!song) continue;
+      const item = await nativeItem(song);
       if (currentId !== startId) return; // a música mudou no meio: um novo envio já foi agendado
-      // envia logo as primeiras para a próxima música já estar pronta; o resto entra depois
-      if (sent === 0 && items.length === 5) {
-        await MN.setUpcoming({ afterId: String(startId), items: items.slice(), repeatOne: false, loop });
-        sent = items.length;
-      }
+      // cada música entra na fila nativa assim que fica pronta
+      await MN.appendUpcoming({ prevId: prev, items: [item], loop });
+      prev = String(wanted[i]);
     }
-    if (items.length > sent) {
-      await MN.setUpcoming({ afterId: String(startId), items, repeatOne: false, loop });
-    }
+    const ids = wanted;
     MN.trim({ maxBytes: NATIVE_CACHE_BYTES, keep: [startId, ...ids].map(String) });
   } catch (e) {
     console.error(e);
