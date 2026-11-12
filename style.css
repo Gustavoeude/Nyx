@@ -2895,7 +2895,7 @@ html.ob-pending body > *:not(.ob):not(script):not(link) { visibility: hidden; }
   gap: 4px;
 }
 .cont-info::before {
-  content: "CONTINUAR OUVINDO";
+  content: var(--cont-label, "CONTINUAR OUVINDO");
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 2.4px;
@@ -3445,3 +3445,17 @@ body:not(.disc) .fp-cover {
 html.theme-switching *,
 html.theme-switching *::before,
 html.theme-switching *::after { transition: none !important; }
+
+/* Faixa sob a barra flutuante: o conteúdo da lista não aparece pelo vão de baixo */
+body::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(12px + env(safe-area-inset-bottom));
+  background: var(--md-surface);
+  z-index: 19;
+  pointer-events: none;
+  transition: background-color .5s ease;
+}
