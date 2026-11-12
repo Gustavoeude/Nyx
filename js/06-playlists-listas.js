@@ -99,6 +99,14 @@ async function deleteSong(song) {
     : "Removida desta sessão, mas não foi possível apagá-la do armazenamento.");
 }
 
+// O player completo cobre os Ajustes; fecha ele antes e abre os Ajustes depois que a navegação assentar
+function openSettingsFromPlayer(page) {
+  closeSheet();
+  const wasOpen = typeof fpOpen !== "undefined" && fpOpen;
+  if (wasOpen) closeFullPlayer();
+  setTimeout(() => openSettings(page), wasOpen ? 260 : 0);
+}
+
 function openSongMenu(song, opts = {}) {
   const actions = [
     {
@@ -168,7 +176,7 @@ function openSongMenu(song, opts = {}) {
       actions.push({
         icon: "graphic_eq",
         label: "Equalizador",
-        run: () => openSettings("equalizador")
+        run: () => openSettingsFromPlayer("equalizador")
       });
     }
   }
