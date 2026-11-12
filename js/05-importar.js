@@ -363,6 +363,7 @@ async function addFile(file, automaticLyrics = "") {
     name: hasArtistInFileName ? nameParts[1].trim() : fileBaseName,
     artist: hasArtistInFileName ? nameParts[0].trim() : "Arquivo local",
     album: "",
+    genre: "",
     sourceKey,
     favorite: false,
     file: file,
@@ -393,6 +394,8 @@ async function addFile(file, automaticLyrics = "") {
         if (tags.title) song.name = tags.title;
         if (tags.artist) song.artist = tags.artist;
         if (tags.album) song.album = tags.album;
+        const tagGenre = cleanGenre(tags.genre);
+        if (tagGenre) song.genre = tagGenre;
         const embeddedLyrics = lyricsFromTag(tags.lyrics);
         if (!song.lyrics && embeddedLyrics) {
           song.lyrics = embeddedLyrics;

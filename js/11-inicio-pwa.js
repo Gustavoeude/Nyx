@@ -54,11 +54,14 @@ loadCustomFonts();
 $("homePage").classList.add("stagger");
 setTimeout(() => $("homePage").classList.remove("stagger"), 1100);
 
-loadSongs().then(() => {
+loadSongs().then(async () => {
+  // se o player nativo já estava tocando, acompanha; senão, volta para onde você parou
+  if (nativeMode) { try { await nativeResync(true); } catch (e) { logErr("inicio:resync", e); } }
+  if (currentId === null && typeof restoreSavedQueue === "function") await restoreSavedQueue();
   refreshAll();
+  if (typeof maybeScanGenresOnce === "function") maybeScanGenresOnce();
   if (!maybeStartOnboarding()) maybeAskPermissionsFirstRun();
   if (typeof syncWatchedFolder === "function") syncWatchedFolder(false);
-  if (nativeMode) nativeResync(true); // se o player nativo já estava tocando, acompanha
   if (nativeAutoDisabled) setTimeout(() => showToast("O player nativo foi desligado depois de falhas. Dá para religar nos Ajustes."), 1500);
 });
 

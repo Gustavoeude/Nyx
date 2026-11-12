@@ -3104,8 +3104,10 @@ body[data-page="library"] .topbar { display: none; }
   background: none;
   color: var(--md-on-surface-variant);
   font: inherit;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
+  white-space: nowrap;
+  min-width: 0;
 }
 .lib-tab.active {
   color: var(--md-primary);

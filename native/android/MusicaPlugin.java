@@ -526,6 +526,95 @@ public class MusicaPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getLastPlayed(PluginCall call) {
+        JSObject o = new JSObject();
+        try {
+            android.content.SharedPreferences p = getContext().getSharedPreferences("nyx_audio", Context.MODE_PRIVATE);
+            o.put("id", p.getString("lastId", ""));
+            o.put("position", p.getLong("lastPos", 0L));
+        } catch (Exception e) {
+            o.put("id", "");
+            o.put("position", 0);
+        }
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void getAudioFx(PluginCall call) {
+        MusicaPlaybackService s = MusicaPlaybackService.instance;
+        if (s == null) {
+            // sem player aberto: mostra o que está salvo (o aparelho é testado ao tocar)
+            call.resolve(MusicaPlaybackService.readEffects(getContext(), true));
+            return;
+        }
+        MusicaPlaybackService.run(getContext(),
+                svc -> call.resolve(MusicaPlaybackService.readEffects(getContext(), svc.effectsSupported())),
+                e -> call.reject("Não foi possível ler o equalizador: " + e.getMessage()));
+    }
+
+    @PluginMethod
+    public void setEqualizer(PluginCall call) {
+        final boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        final int bassValue = call.getInt("bass", 0);
+        JSArray arr = call.getArray("levels");
+        final int[] levels = new int[MusicaPlaybackService.EQ_POINTS_HZ.length];
+        if (arr != null) for (int i = 0; i < levels.length; i++) levels[i] = arr.optInt(i, 0);
+        MusicaPlaybackService.storeEffects(getContext(), enabled, levels, bassValue);
+        if (MusicaPlaybackService.instance != null) {
+            MusicaPlaybackService.run(getContext(), s -> s.reloadAudioPrefs(), null);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setFade(PluginCall call) {
+        MusicaPlaybackService.storeFade(getContext(), call.getInt("ms", 0));
+        if (MusicaPlaybackService.instance != null) {
+            MusicaPlaybackService.run(getContext(), s -> s.reloadAudioPrefs(), null);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setSleep(PluginCall call) {
+        final long ms = call.getInt("ms", 0); // até 12 h cabe em int
+        final boolean endOfTrack = Boolean.TRUE.equals(call.getBoolean("endOfTrack", false));
+        MusicaPlaybackService svc = MusicaPlaybackService.instance;
+        if (svc == null) {
+            // não há player tocando: o app guarda o pedido e reenvia quando a música começar
+            JSObject o = new JSObject();
+            o.put("active", false);
+            o.put("endOfTrack", false);
+            o.put("remainingMs", 0);
+            o.put("fired", false);
+            o.put("idle", true);
+            call.resolve(o);
+            return;
+        }
+        MusicaPlaybackService.run(getContext(), s -> {
+            if (ms <= 0 && !endOfTrack) s.cancelSleep(); else s.setSleep(ms, endOfTrack);
+            call.resolve(s.sleepObject(false));
+        }, e -> call.reject("Não foi possível ajustar o temporizador: " + e.getMessage()));
+    }
+
+    @PluginMethod
+    public void getSleep(PluginCall call) {
+        MusicaPlaybackService s = MusicaPlaybackService.instance;
+        if (s == null) {
+            JSObject o = new JSObject();
+            o.put("active", false);
+            o.put("endOfTrack", false);
+            o.put("remainingMs", 0);
+            o.put("fired", false);
+            o.put("idle", true);
+            call.resolve(o);
+            return;
+        }
+        MusicaPlaybackService.run(getContext(), svc -> call.resolve(svc.sleepObject(false)),
+                e -> call.reject("Não foi possível ler o temporizador: " + e.getMessage()));
+    }
+
+    @PluginMethod
     public void getQueue(PluginCall call) {
         MusicaPlaybackService s = MusicaPlaybackService.instance;
         if (s == null) {

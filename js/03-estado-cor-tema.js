@@ -14,7 +14,7 @@ let playHistory = [];
 let shuffle = false;
 let repeat = "off"; // off | all | one
 let libraryFilter = "all"; // all | fav | id de playlist
-let libraryTab = "songs"; // songs | albums | artists
+let libraryTab = "songs"; // songs | albums | artists | genres
 let libraryGroup = null; // { type, key } ao abrir um álbum/artista
 let playlists = lsGet("playlists", []);
 let mixMode = lsGet("mixMode", "plays"); // plays | recent
@@ -26,7 +26,7 @@ let homeMain = null;
 let lrcTargetId = null;
 let seed = { h: 173, s: 0.78 };
 let settings = Object.assign(
-  { accent: "auto", amoled: false, disc: false, name: "", shapes: {}, swipe: true, swipeInvert: false, font: "roboto", autoLyrics: true, autoCovers: true, nativePlayer: true, wallpaper: null, wallpaperOpacity: 0.28, wallpaperBlur: 0 },
+  { accent: "auto", amoled: false, disc: false, name: "", shapes: {}, swipe: true, swipeInvert: false, font: "roboto", autoLyrics: true, autoCovers: true, nativePlayer: true, language: "auto", wallpaper: null, wallpaperOpacity: 0.28, wallpaperBlur: 0 },
   lsGet("settings", {})
 );
 if (!settings.shapes || typeof settings.shapes !== "object") settings.shapes = {};

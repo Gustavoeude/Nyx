@@ -99,6 +99,14 @@ async function deleteSong(song) {
     : "Removida desta sessão, mas não foi possível apagá-la do armazenamento.");
 }
 
+// O player completo cobre os Ajustes; fecha ele antes e abre os Ajustes depois que a navegação assentar
+function openSettingsFromPlayer(page) {
+  closeSheet();
+  const wasOpen = typeof fpOpen !== "undefined" && fpOpen;
+  if (wasOpen) closeFullPlayer();
+  setTimeout(() => openSettings(page), wasOpen ? 260 : 0);
+}
+
 function openSongMenu(song, opts = {}) {
   const actions = [
     {
@@ -156,6 +164,21 @@ function openSongMenu(song, opts = {}) {
         showToast("Letra removida");
       }
     });
+  }
+
+  if (opts.player) {
+    actions.push({
+      icon: "bedtime",
+      label: "Temporizador de desligar",
+      run: () => openSleepTimerSheet()
+    });
+    if (MN) {
+      actions.push({
+        icon: "graphic_eq",
+        label: "Equalizador",
+        run: () => openSettingsFromPlayer("equalizador")
+      });
+    }
   }
 
   actions.push({
@@ -423,9 +446,10 @@ function renderPlaylistBar(playlist, list) {
 }
 
 function groupKey(song, type) {
-  const raw = type === "albums" ? song.album : song.artist;
+  const raw = type === "albums" ? song.album : type === "genres" ? song.genre : song.artist;
   const v = (raw || "").trim();
   if (type === "albums") return v || "Sem álbum";
+  if (type === "genres") return v || "Sem gênero";
   return v && !/^(arquivo local|unknown)$/i.test(v) ? v : "Artista desconhecido";
 }
 

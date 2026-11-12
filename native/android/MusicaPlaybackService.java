@@ -4,13 +4,17 @@ import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.media.audiofx.BassBoost;
+import android.media.audiofx.Equalizer;
 import android.net.Uri;
 import android.util.LruCache;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
@@ -82,15 +86,60 @@ public class MusicaPlaybackService extends MediaSessionService {
     /** Tempo que o player espera o JavaScript responder a um "próxima/anterior" ou ao fim da faixa. */
     private static final long STUCK_FALLBACK_MS = 4000;
 
+    private static final String AUDIO_PREFS = "nyx_audio";
+    /** Pontos de controle do equalizador do app (Hz); o Android tem bandas diferentes por aparelho. */
+    static final int[] EQ_POINTS_HZ = {60, 230, 910, 3600, 14000};
+    static final int EQ_LIMIT_MB = 1200; // ±12 dB
+
     private ExoPlayer player;
+
+    // equalizador e transição suave (valores guardados no aparelho: valem mesmo com o app fechado)
+    private Equalizer eq;
+    private BassBoost bass;
+    private int effectsSession = -1;
+    private boolean eqOn = false;
+    private int[] eqLevels = new int[EQ_POINTS_HZ.length]; // milibels nos 5 pontos de EQ_POINTS_HZ
+    private int bassStrength = 0;          // 0..1000
+    private int fadeMs = 0;                // 0 = desligado
+
+    // temporizador de desligar
+    private Runnable sleepRunnable;
+    private long sleepEndAt = 0;           // elapsedRealtime em que pausa (0 = sem temporizador por tempo)
+    private boolean sleepEndOfTrack = false;
+
     /** true só quando o app avisou que a lista realmente termina na fila nativa (sem repetir). */
     private boolean listEnds = false;
     private MediaSession session;
     private PrefetchingBitmapLoader artworkBitmapLoader;
 
+    private final Runnable fader = new Runnable() {
+        @Override public void run() {
+            if (player == null) return;
+            updateFade();
+            if (fadeMs > 0 && player.isPlaying()) MAIN.postDelayed(this, 120);
+        }
+    };
+
+    private long lastSavedAt = 0;
+
+    /** Guarda a música e a posição atuais: o app lê isso ao abrir, mesmo se o Android o fechou. */
+    private void saveLast() {
+        try {
+            if (player == null) return;
+            MediaItem it = player.getCurrentMediaItem();
+            if (it == null) return;
+            prefs().edit()
+                    .putString("lastId", it.mediaId)
+                    .putLong("lastPos", Math.max(0L, player.getCurrentPosition()))
+                    .apply();
+            lastSavedAt = SystemClock.elapsedRealtime();
+        } catch (Exception ignored) {}
+    }
+
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
             emitState(null);
+            if (SystemClock.elapsedRealtime() - lastSavedAt > 10000) saveLast();
             if (player != null && player.isPlaying()) MAIN.postDelayed(this, 500);
         }
     };
@@ -154,18 +203,32 @@ public class MusicaPlaybackService extends MediaSessionService {
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_LOCAL)
                 .build();
+        loadAudioPrefs();
+        attachEffects();
 
         player.addListener(new Player.Listener() {
             @Override public void onIsPlayingChanged(boolean isPlaying) {
                 emitState(null);
+                if (!isPlaying) saveLast();
                 MAIN.removeCallbacks(ticker);
                 if (isPlaying) MAIN.post(ticker);
+                MAIN.removeCallbacks(fader);
+                if (isPlaying && fadeMs > 0) MAIN.post(fader);
             }
+            @Override public void onAudioSessionIdChanged(int audioSessionId) { attachEffects(); }
             @Override public void onPlaybackStateChanged(int state) {
                 emitState(null);
                 if (state == Player.STATE_ENDED && !listEnds) armEndedFallback();
             }
-            @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) { emitState(null); }
+            @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+                emitState(null);
+                // "parar no fim da faixa": o player pausa sozinho ao terminar a música atual
+                if (sleepEndOfTrack && !playWhenReady
+                        && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                    cancelSleep();
+                    emitSleep(true);
+                }
+            }
             @Override public void onPlayerError(PlaybackException error) {
                 emitState("Não foi possível tocar esta música (" + error.getErrorCodeName() + ")");
             }
@@ -178,6 +241,7 @@ public class MusicaPlaybackService extends MediaSessionService {
                     o.put("ts", System.currentTimeMillis()); // o app descarta eventos velhos (app congelado)
                     k.emit("transition", o);
                 }
+                saveLast();
                 emitState(null);
             }
         });
@@ -524,6 +588,209 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (loop && player.getRepeatMode() == Player.REPEAT_MODE_OFF) player.setRepeatMode(Player.REPEAT_MODE_ALL);
     }
 
+    // ---------- preferências de áudio (equalizador, transição suave) ----------
+    private SharedPreferences prefs() {
+        return getSharedPreferences(AUDIO_PREFS, MODE_PRIVATE);
+    }
+
+    private void loadAudioPrefs() {
+        SharedPreferences p = prefs();
+        eqOn = p.getBoolean("eqOn", false);
+        bassStrength = Math.max(0, Math.min(1000, p.getInt("bass", 0)));
+        fadeMs = Math.max(0, Math.min(12000, p.getInt("fadeMs", 0)));
+        eqLevels = parseLevels(p.getString("eqLevels", ""));
+    }
+
+    static int[] parseLevels(String csv) {
+        int[] out = new int[EQ_POINTS_HZ.length];
+        if (csv == null || csv.trim().isEmpty()) return out;
+        String[] parts = csv.split(",");
+        for (int i = 0; i < out.length && i < parts.length; i++) {
+            try { out[i] = Integer.parseInt(parts[i].trim()); } catch (NumberFormatException e) { out[i] = 0; }
+            out[i] = Math.max(-EQ_LIMIT_MB, Math.min(EQ_LIMIT_MB, out[i]));
+        }
+        return out;
+    }
+
+    static String joinLevels(int[] levels) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < EQ_POINTS_HZ.length; i++) {
+            if (i > 0) sb.append(',');
+            sb.append(levels != null && i < levels.length ? levels[i] : 0);
+        }
+        return sb.toString();
+    }
+
+    /** Grava as preferências sem precisar do serviço (vale na próxima vez que o player abrir). */
+    static void storeEffects(Context c, boolean enabled, int[] levels, int bassValue) {
+        c.getSharedPreferences(AUDIO_PREFS, MODE_PRIVATE).edit()
+                .putBoolean("eqOn", enabled)
+                .putString("eqLevels", joinLevels(levels))
+                .putInt("bass", Math.max(0, Math.min(1000, bassValue)))
+                .apply();
+    }
+
+    static void storeFade(Context c, int ms) {
+        c.getSharedPreferences(AUDIO_PREFS, MODE_PRIVATE).edit()
+                .putInt("fadeMs", Math.max(0, Math.min(12000, ms)))
+                .apply();
+    }
+
+    /** Lê o estado dos efeitos direto das preferências (para a tela de Ajustes). */
+    static JSObject readEffects(Context c, boolean supported) {
+        SharedPreferences p = c.getSharedPreferences(AUDIO_PREFS, MODE_PRIVATE);
+        JSObject o = new JSObject();
+        o.put("supported", supported);
+        o.put("enabled", p.getBoolean("eqOn", false));
+        o.put("bass", p.getInt("bass", 0));
+        o.put("fadeMs", p.getInt("fadeMs", 0));
+        o.put("min", -EQ_LIMIT_MB);
+        o.put("max", EQ_LIMIT_MB);
+        JSArray freqs = new JSArray();
+        JSArray levels = new JSArray();
+        int[] lv = parseLevels(p.getString("eqLevels", ""));
+        for (int i = 0; i < EQ_POINTS_HZ.length; i++) {
+            freqs.put(EQ_POINTS_HZ[i]);
+            levels.put(lv[i]);
+        }
+        o.put("bands", freqs);
+        o.put("levels", levels);
+        return o;
+    }
+
+    /** Nível (milibels) numa frequência qualquer, interpolando os 5 pontos em escala logarítmica. */
+    private int levelAtHz(double hz) {
+        if (hz <= EQ_POINTS_HZ[0]) return eqLevels[0];
+        int last = EQ_POINTS_HZ.length - 1;
+        if (hz >= EQ_POINTS_HZ[last]) return eqLevels[last];
+        for (int i = 0; i < last; i++) {
+            if (hz <= EQ_POINTS_HZ[i + 1]) {
+                double a = Math.log(EQ_POINTS_HZ[i]);
+                double b = Math.log(EQ_POINTS_HZ[i + 1]);
+                double t = (Math.log(hz) - a) / (b - a);
+                return (int) Math.round(eqLevels[i] + t * (eqLevels[i + 1] - eqLevels[i]));
+            }
+        }
+        return 0;
+    }
+
+    /** Relê as preferências e aplica (chamado quando o app muda algo com o player já aberto). */
+    void reloadAudioPrefs() {
+        loadAudioPrefs();
+        attachEffects();
+        applyEffects();
+        MAIN.removeCallbacks(fader);
+        if (fadeMs > 0 && player.isPlaying()) MAIN.post(fader);
+        else player.setVolume(1f);
+    }
+
+    /** Liga o equalizador e o reforço de graves à sessão de áudio do player. */
+    private void attachEffects() {
+        if (player == null) return;
+        int session = player.getAudioSessionId();
+        if (session == C.AUDIO_SESSION_ID_UNSET || session == 0) return;
+        if (session == effectsSession && eq != null) { applyEffects(); return; }
+        releaseEffects();
+        effectsSession = session;
+        try { eq = new Equalizer(0, session); } catch (Exception e) { eq = null; }
+        try { bass = new BassBoost(0, session); } catch (Exception e) { bass = null; }
+        applyEffects();
+    }
+
+    private void applyEffects() {
+        try {
+            if (eq != null) {
+                short bands = eq.getNumberOfBands();
+                short[] range = eq.getBandLevelRange();
+                for (short i = 0; i < bands; i++) {
+                    int lvl = levelAtHz(eq.getCenterFreq(i) / 1000.0); // milihertz -> hertz
+                    lvl = Math.max(range[0], Math.min(range[1], lvl));
+                    eq.setBandLevel(i, (short) lvl);
+                }
+                eq.setEnabled(eqOn);
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (bass != null) {
+                boolean on = eqOn && bassStrength > 0 && bass.getStrengthSupported();
+                if (on) bass.setStrength((short) bassStrength);
+                bass.setEnabled(on);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void releaseEffects() {
+        try { if (eq != null) eq.release(); } catch (Exception ignored) {}
+        try { if (bass != null) bass.release(); } catch (Exception ignored) {}
+        eq = null;
+        bass = null;
+        effectsSession = -1;
+    }
+
+    boolean effectsSupported() {
+        attachEffects();
+        return eq != null;
+    }
+
+    private void updateFade() {
+        if (fadeMs <= 0) { player.setVolume(1f); return; }
+        long dur = player.getDuration();
+        if (dur == C.TIME_UNSET || dur <= 0) return;
+        long f = Math.min((long) fadeMs, dur / 4);
+        if (f <= 0) return;
+        long pos = Math.max(0L, player.getCurrentPosition());
+        long rem = Math.max(0L, dur - pos);
+        float v = 1f;
+        if (rem < f) v = rem / (float) f;
+        if (pos < f) v = Math.min(v, Math.max(0.05f, pos / (float) f));
+        player.setVolume(Math.max(0f, Math.min(1f, v)));
+    }
+
+    // ---------- temporizador de desligar ----------
+    /** minutes > 0: pausa depois desse tempo; endOfTrack: pausa quando a música atual terminar. */
+    void setSleep(long ms, boolean endOfTrack) {
+        cancelSleep();
+        if (endOfTrack) {
+            sleepEndOfTrack = true;
+            player.setPauseAtEndOfMediaItems(true);
+        } else if (ms > 0) {
+            sleepEndAt = SystemClock.elapsedRealtime() + ms;
+            sleepRunnable = () -> {
+                sleepRunnable = null;
+                sleepEndAt = 0;
+                try { player.pause(); } catch (Exception ignored) {}
+                emitSleep(true);
+            };
+            MAIN.postDelayed(sleepRunnable, ms);
+        }
+        emitSleep(false);
+    }
+
+    void cancelSleep() {
+        if (sleepRunnable != null) MAIN.removeCallbacks(sleepRunnable);
+        sleepRunnable = null;
+        sleepEndAt = 0;
+        if (sleepEndOfTrack && player != null) {
+            try { player.setPauseAtEndOfMediaItems(false); } catch (Exception ignored) {}
+        }
+        sleepEndOfTrack = false;
+    }
+
+    JSObject sleepObject(boolean fired) {
+        JSObject o = new JSObject();
+        boolean byTime = sleepEndAt > 0;
+        o.put("active", byTime || sleepEndOfTrack);
+        o.put("endOfTrack", sleepEndOfTrack);
+        o.put("remainingMs", byTime ? Math.max(0L, sleepEndAt - SystemClock.elapsedRealtime()) : 0L);
+        o.put("fired", fired);
+        return o;
+    }
+
+    private void emitSleep(boolean fired) {
+        EventSink k = sink;
+        if (k != null) k.emit("sleep", sleepObject(fired));
+    }
+
     void play() { player.play(); }
     void pause() { player.pause(); }
     void seek(long ms) { player.seekTo(Math.max(0L, ms)); }
@@ -543,6 +810,7 @@ public class MusicaPlaybackService extends MediaSessionService {
                 k.emit("state", o);
             }
         } catch (Exception ignored) {}
+        cancelSleep();
         try {
             player.stop();
             player.clearMediaItems();
@@ -597,7 +865,11 @@ public class MusicaPlaybackService extends MediaSessionService {
 
     @Override
     public void onDestroy() {
+        saveLast();
         MAIN.removeCallbacks(ticker);
+        MAIN.removeCallbacks(fader);
+        cancelSleep();
+        releaseEffects();
         instance = null;
         try {
             if (session != null) {
