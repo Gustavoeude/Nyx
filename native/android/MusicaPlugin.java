@@ -326,6 +326,27 @@ public class MusicaPlugin extends Plugin {
         });
     }
 
+    /** O app informa a música atual e se ela é favorita (coração do widget). */
+    @PluginMethod
+    public void widgetInfo(PluginCall call) {
+        try {
+            NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false));
+        } catch (Exception ignored) {}
+        call.resolve();
+    }
+
+    /** Favoritos pedidos pelo widget que o app ainda não aplicou. */
+    @PluginMethod
+    public void takeWidgetFavorites(PluginCall call) {
+        JSObject r = new JSObject();
+        try {
+            r.put("items", NyxWidgets.takePendingFavorites(getContext()));
+        } catch (Exception e) {
+            r.put("items", new org.json.JSONArray());
+        }
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void update(PluginCall call) {
         try {

@@ -144,6 +144,7 @@ function playSong(id, context, back) {
 function onSongChanged() {
   lrcActive = -1;
   if (typeof saveQueueState === "function") saveQueueState(true);
+  if (typeof widgetSyncInfo === "function") widgetSyncInfo();
   updateHome();
   updatePlayButtons();
   updateMediaSession();

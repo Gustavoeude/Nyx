@@ -58,6 +58,8 @@ loadSongs().then(async () => {
   // se o player nativo já estava tocando, acompanha; senão, volta para onde você parou
   if (nativeMode) { try { await nativeResync(true); } catch (e) { logErr("inicio:resync", e); } }
   if (currentId === null && typeof restoreSavedQueue === "function") await restoreSavedQueue();
+  if (typeof applyWidgetFavorites === "function") await applyWidgetFavorites();
+  if (typeof widgetSyncInfo === "function") widgetSyncInfo();
   refreshAll();
   if (typeof maybeScanGenresOnce === "function") maybeScanGenresOnce();
   if (!maybeStartOnboarding()) maybeAskPermissionsFirstRun();

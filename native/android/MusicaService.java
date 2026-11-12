@@ -116,8 +116,30 @@ public class MusicaService extends Service {
         if (i.hasExtra("position")) positionMs = (long) (i.getDoubleExtra("position", 0) * 1000);
         if (i.hasExtra("duration")) durationMs = (long) (i.getDoubleExtra("duration", 0) * 1000);
         if (i.hasExtra("rate")) rate = (float) i.getDoubleExtra("rate", 1);
-        if (i.hasExtra("cover")) cover = decodeCover(i.getStringExtra("cover"));
+        if (i.hasExtra("cover")) {
+            cover = decodeCover(i.getStringExtra("cover"));
+            widgetCoverPath = saveWidgetCover(cover);
+        }
+        NyxWidgets.publish(this, null, title, artist, widgetCoverPath, playing, positionMs, durationMs);
         main.post(this::refresh);
+    }
+
+    private String widgetCoverPath = "";
+    private int widgetCoverCount = 0;
+
+    /** Guarda a capa em arquivo para os widgets da tela inicial. */
+    private String saveWidgetCover(Bitmap b) {
+        if (b == null) return "";
+        try {
+            widgetCoverCount++;
+            java.io.File f = new java.io.File(getCacheDir(), "widget_cover_" + (widgetCoverCount % 2) + ".jpg"); // nome muda para o widget notar a troca
+            try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) {
+                b.compress(Bitmap.CompressFormat.JPEG, 88, o);
+            }
+            return f.getAbsolutePath();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static String nonEmpty(String s, String fallback) {

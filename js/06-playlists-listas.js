@@ -201,6 +201,7 @@ function toggleFavorite(song) {
   updateHome(); // atualiza "Seus favoritos" na hora
   if (song.id === currentId) updateFullPlayer();
   if (song.favorite) popHeart(song);
+  if (song.id === currentId && typeof widgetSyncInfo === "function") widgetSyncInfo();
 }
 
 function setFavoriteControl(button, song) {

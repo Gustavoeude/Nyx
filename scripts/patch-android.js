@@ -78,6 +78,26 @@ if (missingPermissions.length || services.length) {
   fs.writeFileSync(manifestPath, xml);
   console.log("AndroidManifest atualizado (permissões e serviços verificados)");
 }
+/* ----- widgets da tela inicial: receivers no manifesto ----- */
+const widgetReceivers = [
+  ["NyxWidgetA", "Nyx · Compacto (4×1)", "nyx_widget_a"],
+  ["NyxWidgetB", "Nyx · Médio (4×2)", "nyx_widget_b"],
+  ["NyxWidgetC", "Nyx · Quadrado (2×2)", "nyx_widget_c"]
+].filter(([cls]) => !xml.includes('android:name=".' + cls + '"'));
+if (widgetReceivers.length) {
+  const decl = widgetReceivers.map(([cls, label, info]) =>
+    '        <receiver android:name=".' + cls + '" android:exported="false" android:label="' + label + '">\n' +
+    '            <intent-filter>\n' +
+    '                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />\n' +
+    '            </intent-filter>\n' +
+    '            <meta-data android:name="android.appwidget.provider" android:resource="@xml/' + info + '" />\n' +
+    '        </receiver>'
+  ).join("\n");
+  xml = xml.replace("</application>", decl + "\n    </application>");
+  fs.writeFileSync(manifestPath, xml);
+  console.log("widgets registrados no AndroidManifest");
+}
+
 /* ----- nome, ícone e versão do app ----- */
 const res = path.join(root, "android/app/src/main/res");
 const APP_NAME = "Nyx";
@@ -116,6 +136,14 @@ const adaptive =
 fs.mkdirSync(path.join(res, "mipmap-anydpi-v26"), { recursive: true });
 fs.writeFileSync(path.join(res, "mipmap-anydpi-v26/ic_launcher.xml"), adaptive);
 fs.writeFileSync(path.join(res, "mipmap-anydpi-v26/ic_launcher_round.xml"), adaptive);
+// layouts, ícones e configuração dos widgets da tela inicial
+for (const d of ["layout", "drawable", "xml"]) {
+  const from = path.join(resSrc, d);
+  if (!fs.existsSync(from)) continue;
+  const to = path.join(res, d);
+  fs.mkdirSync(to, { recursive: true });
+  for (const f of fs.readdirSync(from)) fs.copyFileSync(path.join(from, f), path.join(to, f));
+}
 // ícone monocromático e transparente usado nas notificações de mídia
 const notificationIcon = path.join(resSrc, "drawable-nodpi/ic_notification_music.png");
 const notificationDrawableDir = path.join(res, "drawable-nodpi");

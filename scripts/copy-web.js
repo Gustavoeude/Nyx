@@ -21,6 +21,7 @@ const files = [
   "js/13-fila-salva.js",
   "js/14-audio-extras.js",
   "js/15-idioma.js",
+  "js/16-widgets.js",
   "js/11-inicio-pwa.js",
   "style.css",
   "jsmediatags.min.js",
