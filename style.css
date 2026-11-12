@@ -2895,7 +2895,7 @@ html.ob-pending body > *:not(.ob):not(script):not(link) { visibility: hidden; }
   gap: 4px;
 }
 .cont-info::before {
-  content: "CONTINUAR OUVINDO";
+  content: var(--cont-label, "CONTINUAR OUVINDO");
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 2.4px;

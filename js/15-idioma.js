@@ -14,6 +14,103 @@ const LANGS = [
 
 // português → [inglês, espanhol]
 const LANG_DICT = {
+  /* extras (rótulos soltos, mensagens e avisos) */
+  "música": ["song", "canción"],
+  "músicas": ["songs", "canciones"],
+  "Música": ["Music", "Música"],
+  "reprodução": ["play", "reproducción"],
+  "reproduções": ["plays", "reproducciones"],
+  "favorita": ["favorite", "favorita"],
+  "favoritas": ["favorites", "favoritas"],
+  "vez": ["time", "vez"],
+  "vezes": ["times", "veces"],
+  "CONTINUAR OUVINDO": ["KEEP LISTENING", "SEGUIR ESCUCHANDO"],
+  "Trocar letra (.lrc)": ["Replace lyrics (.lrc)", "Cambiar letra (.lrc)"],
+  "Importar letra (.lrc)": ["Import lyrics (.lrc)", "Importar letra (.lrc)"],
+  "Importar .lrc": ["Import .lrc", "Importar .lrc"],
+  "Temporizador, equalizador e player nativo": ["Sleep timer, equalizer and native player", "Temporizador, ecualizador y reproductor nativo"],
+  "Bem-vindo à Música!": ["Welcome to Music!", "¡Bienvenido a Música!"],
+  "Botão de tocar": ["Play button", "Botón de reproducir"],
+  "Capa do Continuar ouvindo": ["Keep listening cover", "Carátula de Seguir escuchando"],
+  "Capa do mini player": ["Mini player cover", "Carátula del mini reproductor"],
+  "Capas das músicas (listas)": ["Song covers (lists)", "Carátulas de las canciones (listas)"],
+  "Capas dos favoritos": ["Favorites covers", "Carátulas de los favoritos"],
+  "Pasta de músicas": ["Music folder", "Carpeta de música"],
+  "Pastas ignoradas": ["Ignored folders", "Carpetas ignoradas"],
+  "Pastas monitoradas": ["Watched folders", "Carpetas vigiladas"],
+  "Escolha o formato": ["Choose the format", "Elige el formato"],
+  "Geométrica": ["Geometric", "Geométrica"],
+  "Elegante, com serifa": ["Elegant, serif", "Elegante, con serifa"],
+  "Redonda e moderna": ["Round and modern", "Redonda y moderna"],
+  "Suave e arredondada": ["Soft and rounded", "Suave y redondeada"],
+  "Pixelada de arcade (bem larga)": ["Arcade pixel (very wide)", "Pixelada de arcade (muy ancha)"],
+  "Pixelada, em maiúsculas": ["Pixel, all caps", "Pixelada, en mayúsculas"],
+  "Pixelada, parecida com a do Minecraft": ["Pixel, similar to Minecraft's", "Pixelada, parecida a la de Minecraft"],
+  "Ajuste quanto da imagem aparece": ["Adjust how much of the image shows", "Ajusta cuánto de la imagen se ve"],
+  "Defina qualquer imagem do celular como fundo": ["Set any image from your phone as the background", "Usa cualquier imagen del teléfono como fondo"],
+  "Deixe o fundo mais suave": ["Make the background softer", "Suaviza el fondo"],
+  "Prévia do papel de parede atual": ["Current wallpaper preview", "Vista previa del fondo actual"],
+  "Restaurar o fundo original do aplicativo": ["Restore the app's original background", "Restaurar el fondo original de la app"],
+  "Papel de parede aplicado.": ["Wallpaper applied.", "Fondo aplicado."],
+  "Papel de parede removido.": ["Wallpaper removed.", "Fondo quitado."],
+  "Volta todas as bolinhas ao formato padrão": ["Resets all dots to the default shape", "Devuelve todos los puntos a la forma predeterminada"],
+  "Escolha um arquivo .ttf, .otf ou .woff2 do seu celular": ["Choose a .ttf, .otf or .woff2 file from your phone", "Elige un archivo .ttf, .otf o .woff2 de tu teléfono"],
+  "Essa fonte é grande demais (máximo 15 MB)": ["This font is too large (15 MB max)", "Esta fuente es demasiado grande (máximo 15 MB)"],
+  "Esse arquivo não parece ser uma fonte válida": ["This file doesn't look like a valid font", "Este archivo no parece ser una fuente válida"],
+  "Diretório adicionado à lista de ignorados": ["Folder added to the ignored list", "Carpeta añadida a la lista de ignoradas"],
+  "Diretório removido da lista de ignorados": ["Folder removed from the ignored list", "Carpeta quitada de la lista de ignoradas"],
+  "Não foi possível adicionar esse diretório": ["Couldn't add this folder", "No se pudo añadir esta carpeta"],
+  "Esta música ainda não tem letra.": ["This song has no lyrics yet.", "Esta canción aún no tiene letra."],
+  "Não encontramos uma letra correspondente.": ["We couldn't find matching lyrics.", "No encontramos una letra correspondiente."],
+  "Nenhum erro registrado.": ["No errors logged.", "Ningún error registrado."],
+  "Não consegui copiar.": ["I couldn't copy.", "No pude copiar."],
+  "Nenhuma música na coleção.": ["No songs in the collection.", "Ninguna canción en la colección."],
+  "Adicione músicas para pesquisar sua coleção.": ["Add songs to search your collection.", "Añade canciones para buscar en tu colección."],
+  "Experimente pesquisar por outro nome.": ["Try searching for another name.", "Prueba a buscar otro nombre."],
+  "As músicas que você adicionar aparecerão aqui.": ["The songs you add will show up here.", "Las canciones que añadas aparecerán aquí."],
+  "Marque músicas com o coração para encontrá-las aqui.": ["Tap the heart on songs to find them here.", "Marca canciones con el corazón para encontrarlas aquí."],
+  "Use o menu ⋮ de uma música para adicioná-la aqui.": ["Use a song's ⋮ menu to add it here.", "Usa el menú ⋮ de una canción para añadirla aquí."],
+  "As músicas continuam na biblioteca.": ["The songs stay in the library.", "Las canciones siguen en la biblioteca."],
+  "Vamos deixar tudo pronto para você. Leva menos de um minuto.": ["Let's get everything ready for you. It takes less than a minute.", "Vamos a dejar todo listo para ti. Toma menos de un minuto."],
+  "Escolha arquivos de áudio ou uma pasta para montar sua biblioteca. O app só recebe o que você selecionar.": ["Choose audio files or a folder to build your library. The app only receives what you select.", "Elige archivos de audio o una carpeta para armar tu biblioteca. La app solo recibe lo que selecciones."],
+  "Escolha arquivos ou uma pasta para adicionar músicas. O app só recebe os itens que você selecionar.": ["Choose files or a folder to add songs. The app only receives the items you select.", "Elige archivos o una carpeta para añadir canciones. La app solo recibe los elementos que selecciones."],
+  "Selecione uma ou mais músicas individualmente.": ["Select one or more songs individually.", "Selecciona una o más canciones individualmente."],
+  "Selecione também a música correspondente para associar a letra.": ["Also select the matching song to link the lyrics.", "Selecciona también la canción correspondiente para asociar la letra."],
+  "Importa arquivos de áudio encontrados na pasta escolhida.": ["Imports audio files found in the chosen folder.", "Importa los archivos de audio de la carpeta elegida."],
+  "Nenhuma pasta marcada. Tudo será importado.": ["No folders marked. Everything will be imported.", "Ninguna carpeta marcada. Se importará todo."],
+  "Tudo é importado por padrão. Toque nas pastas que você não quer na biblioteca, como toques e sons de apps.": ["Everything is imported by default. Tap the folders you don't want in the library, like ringtones and app sounds.", "Todo se importa por defecto. Toca las carpetas que no quieres en la biblioteca, como tonos y sonidos de apps."],
+  "Não foi possível ler essa pasta. Tente novamente ou escolha as músicas individualmente.": ["Couldn't read this folder. Try again or pick the songs individually.", "No se pudo leer esta carpeta. Inténtalo de nuevo o elige las canciones individualmente."],
+  "Não consegui ler um diretório. Verifique o acesso à pasta nos Ajustes.": ["I couldn't read a folder. Check the folder access in Settings.", "No pude leer una carpeta. Revisa el acceso a la carpeta en Ajustes."],
+  "A música foi adicionada, mas não consegui ler suas informações.": ["The song was added, but I couldn't read its info.", "La canción se añadió, pero no pude leer su información."],
+  "A música continua tocando em segundo plano.": ["The music keeps playing in the background.", "La música sigue sonando en segundo plano."],
+  "A busca está temporariamente limitada. Tente novamente mais tarde.": ["Search is temporarily limited. Try again later.", "La búsqueda está limitada temporalmente. Inténtalo más tarde."],
+  "Não foi possível buscar agora. Verifique a conexão e tente novamente.": ["Couldn't search right now. Check your connection and try again.", "No se pudo buscar ahora. Revisa la conexión e inténtalo de nuevo."],
+  "Alguns Androids encerram apps em segundo plano. Desative a otimização de bateria para a música não parar do nada.": ["Some Android phones close apps in the background. Turn off battery optimization so the music doesn't just stop.", "Algunos Android cierran apps en segundo plano. Desactiva la optimización de batería para que la música no se detenga sola."],
+  "Ative as notificações para controlar a música pela tela de bloqueio e pela barra de notificações.": ["Turn on notifications to control the music from the lock screen and the notification bar.", "Activa las notificaciones para controlar la música desde la pantalla de bloqueo y la barra de notificaciones."],
+  "Permita notificações para ver os controles de música na tela de bloqueio.": ["Allow notifications to see music controls on the lock screen.", "Permite las notificaciones para ver los controles de música en la pantalla de bloqueo."],
+  "Sem ela, os controles somem da tela de bloqueio. Dá para ativar depois nas configurações do Android.": ["Without it, the controls disappear from the lock screen. You can turn it on later in Android settings.", "Sin ella, los controles desaparecen de la pantalla de bloqueo. Puedes activarla después en los ajustes de Android."],
+  "Os controles aparecem na tela de bloqueio.": ["The controls show on the lock screen.", "Los controles aparecen en la pantalla de bloqueo."],
+  "Confirme na janela do Android para valer.": ["Confirm in the Android window to apply it.", "Confirma en la ventana de Android para que surta efecto."],
+  "Toque em desativar otimização": ["Tap disable optimization", "Toca en desactivar optimización"],
+  "O player nativo foi desligado depois de falhas. Dá para religar nos Ajustes.": ["The native player was turned off after failures. You can turn it back on in Settings.", "El reproductor nativo se apagó tras varios fallos. Puedes volver a activarlo en Ajustes."],
+  "Não consegui preparar esta música para o player nativo.": ["I couldn't prepare this song for the native player.", "No pude preparar esta canción para el reproductor nativo."],
+  "Não foi possível iniciar a reprodução desta música.": ["Couldn't start playing this song.", "No se pudo iniciar la reproducción de esta canción."],
+  "O navegador bloqueou a reprodução. Toque novamente em reproduzir.": ["The browser blocked playback. Tap play again.", "El navegador bloqueó la reproducción. Toca reproducir de nuevo."],
+  "Este formato não é compatível com o navegador.": ["This format isn't supported by the browser.", "Este formato no es compatible con el navegador."],
+  "Não consegui decodificar este arquivo de áudio.": ["I couldn't decode this audio file.", "No pude decodificar este archivo de audio."],
+  "Ocorreu um erro ao ler o arquivo de áudio.": ["An error occurred while reading the audio file.", "Ocurrió un error al leer el archivo de audio."],
+  "Falha ao carregar os dados do arquivo de áudio.": ["Failed to load the audio file data.", "Error al cargar los datos del archivo de audio."],
+  "Escolha um arquivo de imagem.": ["Choose an image file.", "Elige un archivo de imagen."],
+  "Escolha uma imagem de até 20 MB.": ["Choose an image up to 20 MB.", "Elige una imagen de hasta 20 MB."],
+  "A imagem ficou muito grande. Escolha outra.": ["The image is too large. Pick another one.", "La imagen es demasiado grande. Elige otra."],
+  "Não foi possível abrir essa imagem.": ["Couldn't open this image.", "No se pudo abrir esta imagen."],
+  "Não foi possível aplicar a imagem.": ["Couldn't apply the image.", "No se pudo aplicar la imagen."],
+  "Não foi possível processar a imagem.": ["Couldn't process the image.", "No se pudo procesar la imagen."],
+  "Não foi possível acessar o armazenamento local. Confira as permissões e o espaço disponível.": ["Couldn't access local storage. Check permissions and available space.", "No se pudo acceder al almacenamiento local. Revisa los permisos y el espacio disponible."],
+  "Removida desta sessão, mas não foi possível apagá-la do armazenamento.": ["Removed from this session, but couldn't be deleted from storage.", "Quitada de esta sesión, pero no se pudo borrar del almacenamiento."],
+  "O Android não retornou dados do arquivo.": ["Android returned no data for the file.", "Android no devolvió datos del archivo."],
+  "Os controles na tela bloqueada dependem do suporte do navegador. Eles não precisam da permissão de notificações.": ["Lock screen controls depend on browser support. They don't need the notifications permission.", "Los controles en la pantalla de bloqueo dependen del navegador. No necesitan el permiso de notificaciones."],
+  "Pasta": ["Folder", "Carpeta"],
   /* tela inicial, navegação e player */
   "Início": ["Home", "Inicio"], "Biblioteca": ["Library", "Biblioteca"], "Buscar": ["Search", "Buscar"],
   "Ajustes": ["Settings", "Ajustes"], "Músicas": ["Songs", "Canciones"], "Álbuns": ["Albums", "Álbumes"],
@@ -169,6 +266,10 @@ const LANG_GREET = {
   "BOA TARDE": ["GOOD AFTERNOON", "BUENAS TARDES"], "BOA NOITE": ["GOOD EVENING", "BUENAS NOCHES"]
 };
 const LANG_RULES = [
+  [/^(\d+) vez(?:es)?$/, (n) => n + (n === "1" ? " play" : " plays"), (n) => n + (n === "1" ? " vez" : " veces")],
+  [/^(\d+) músicas? na coleção\.$/, (n) => n + (n === "1" ? " song in the collection." : " songs in the collection."), (n) => n + (n === "1" ? " canción en la colección." : " canciones en la colección.")],
+  [/^Fonte “(.+)” adicionada$/, (x) => "Font “" + x + "” added", (x) => "Fuente “" + x + "” añadida"],
+  [/^“(.+)” será removida do app\.$/, (x) => "“" + x + "” will be removed from the app.", (x) => "“" + x + "” se quitará de la app."],
   [/^(BOA MADRUGADA|BOM DIA|BOA TARDE|BOA NOITE)(, [\s\S]*)?$/, (g, r) => LANG_GREET[g][0] + (r || ""), (g, r) => LANG_GREET[g][1] + (r || "")],
   [/^(\d+) músicas?$/, (n) => n + (n === "1" ? " song" : " songs"), (n) => n + (n === "1" ? " canción" : " canciones")],
   [/^(\d+) músicas? adicionadas?$/, (n) => n + (n === "1" ? " song added" : " songs added"), (n) => n + (n === "1" ? " canción añadida" : " canciones añadidas")],
@@ -212,6 +313,14 @@ function resolveLang() {
   return s === "pt" || s === "en" || s === "es" ? s : detectDeviceLang();
 }
 
+let langUpperCache = null;
+function langUpperIndex() {
+  if (langUpperCache) return langUpperCache;
+  langUpperCache = {};
+  for (const k of Object.keys(LANG_DICT)) langUpperCache[k.toUpperCase()] = LANG_DICT[k];
+  return langUpperCache;
+}
+
 function translateString(str, lang) {
   if (lang === "pt" || !str) return str;
   const m = str.match(/^(\s*)([\s\S]*?)(\s*)$/);
@@ -225,6 +334,11 @@ function translateString(str, lang) {
       const r = core.match(rule[0]);
       if (r) { out = rule[idx + 1](...r.slice(1)); break; }
     }
+  }
+  if (out === null && core === core.toUpperCase() && core !== core.toLowerCase()) {
+    // texto em caixa alta (o app escreve alguns rótulos assim): acha pelo equivalente normal
+    const up = langUpperIndex();
+    if (up[core]) out = up[core][idx].toUpperCase();
   }
   return out === null ? str : m[1] + out + m[3];
 }
@@ -298,6 +412,9 @@ function startLangObserver() {
 function applyLanguage() {
   currentLang = resolveLang();
   document.documentElement.lang = currentLang === "pt" ? "pt-BR" : currentLang;
+  // rótulo desenhado pelo CSS (não é texto do HTML)
+  if (currentLang === "pt") document.documentElement.style.removeProperty("--cont-label");
+  else document.documentElement.style.setProperty("--cont-label", JSON.stringify(translateString("CONTINUAR OUVINDO", currentLang)));
   langBusy = true;
   try { translateTree(document.body); } catch (e) { logErr("idioma:aplicar", e); }
   langBusy = false;

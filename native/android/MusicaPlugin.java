@@ -298,9 +298,29 @@ public class MusicaPlugin extends Plugin {
         activity.runOnUiThread(() -> {
             try {
                 android.view.Window window = activity.getWindow();
-                window.setNavigationBarColor(android.graphics.Color.parseColor(hex));
-                androidx.core.view.WindowCompat.getInsetsController(window, window.getDecorView())
-                        .setAppearanceLightNavigationBars(lightBackground);
+                int color = android.graphics.Color.parseColor(hex);
+                window.setNavigationBarColor(color);
+                // Fundo da janela: é ele que aparece na faixa entre o app e o teclado
+                // (e atrás da barra de status). Sem isso fica o cinza padrão do Android.
+                window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(color));
+                window.getDecorView().setBackgroundColor(color);
+                android.view.View content = activity.findViewById(android.R.id.content);
+                if (content != null) content.setBackgroundColor(color);
+                // Os pais do WebView também recebem a cor: é o fundo deles que aparece na faixa
+                // de margem/preenchimento (barra de status e espaço acima do teclado).
+                try {
+                    android.view.View web = getBridge().getWebView();
+                    android.view.ViewParent p = web != null ? web.getParent() : null;
+                    int guard = 0;
+                    while (p instanceof android.view.View && guard++ < 6) {
+                        ((android.view.View) p).setBackgroundColor(color);
+                        p = p.getParent();
+                    }
+                } catch (Exception ignored2) { }
+                androidx.core.view.WindowInsetsControllerCompat bars =
+                        androidx.core.view.WindowCompat.getInsetsController(window, window.getDecorView());
+                bars.setAppearanceLightNavigationBars(lightBackground);
+                bars.setAppearanceLightStatusBars(lightBackground);
             } catch (Exception ignored) { }
             call.resolve();
         });
