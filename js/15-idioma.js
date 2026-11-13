@@ -32,6 +32,7 @@ const LANG_DICT = {
   "Bem-vindo à Música!": ["Welcome to Music!", "¡Bienvenido a Música!"],
   "Botão de tocar": ["Play button", "Botón de reproducir"],
   "Capa do Continuar ouvindo": ["Keep listening cover", "Carátula de Seguir escuchando"],
+  "Capa do player completo": ["Full player cover", "Carátula del reproductor completo"], "Timer": ["Timer", "Temporizador"], "Formato": ["Shape", "Forma"], "Formato da capa": ["Cover shape", "Forma de la carátula"],
   "Capa do mini player": ["Mini player cover", "Carátula del mini reproductor"],
   "Capas das músicas (listas)": ["Song covers (lists)", "Carátulas de las canciones (listas)"],
   "Capas dos favoritos": ["Favorites covers", "Carátulas de los favoritos"],

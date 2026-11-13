@@ -3459,3 +3459,35 @@ body::after {
   pointer-events: none;
   transition: background-color .5s ease;
 }
+
+/* ----- Player completo: atalhos em chips (visual A) ----- */
+.fp-stage { margin: 4px 16px 12px; }
+.fp-chips {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 18px 0;
+  flex-shrink: 0;
+}
+.fp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background-color .3s ease, border-radius .35s var(--m3e-spring), transform .15s ease;
+}
+.fp-chip[hidden] { display: none; }
+.fp-chip .material-symbols-rounded { font-size: 18px; }
+.fp-chip:active { transform: scale(.94); }
+.fp-chip.on {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  border-radius: 14px;
+}
+.fp-chip:focus-visible { outline: 3px solid var(--md-primary); outline-offset: 2px; }

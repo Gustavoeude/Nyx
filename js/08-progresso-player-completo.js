@@ -266,6 +266,11 @@ $("fpMenu").onclick = () => {
   if (song) openSongMenu(song, { player: true });
 };
 
+$("fpChipTimer").onclick = () => openSleepTimerSheet();
+$("fpChipShape").onclick = () => openShapePicker("fpCover", false);
+if (MN) $("fpChipEq").onclick = () => openSettingsFromPlayer("equalizador");
+else $("fpChipEq").hidden = true;
+
 $("fpLyricsBtn").onclick = () => {
   lyricsView = !lyricsView;
   $("fpStage").classList.toggle("lyrics-on", lyricsView);

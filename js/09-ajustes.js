@@ -648,6 +648,7 @@ const BUBBLES = {
   favCovers: "Capas dos favoritos",
   songCovers: "Capas das músicas (listas)",
   nowCover: "Capa do mini player",
+  fpCover: "Capa do player completo",
   heroPlay: "Botão de tocar"
 };
 
@@ -656,6 +657,7 @@ const BUBBLE_SEL = {
   favCovers: ".fav-cov",
   songCovers: ".song-cover, .h-cover",
   nowCover: "#nowCover",
+  fpCover: "#fpCover",
   heroPlay: "#heroPlay"
 };
 
@@ -743,7 +745,7 @@ function applyShapes() {
   });
 }
 
-const DEFAULT_PREV = { artMain: "scal8", favCovers: "scal8", songCovers: "scal8", nowCover: "scal6", heroPlay: "squircle" };
+const DEFAULT_PREV = { artMain: "scal8", favCovers: "scal8", songCovers: "scal8", nowCover: "scal6", fpCover: "scal8", heroPlay: "squircle" };
 
 function openShapePicker(id, backToSettings) {
   const returnFocus = activeSheet ? activeSheet.returnFocus : document.activeElement;
