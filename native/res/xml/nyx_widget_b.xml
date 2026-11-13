@@ -4,5 +4,6 @@
     android:targetCellWidth="4" android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_b"
+    android:previewImage="@drawable/nyx_preview_b"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"/>

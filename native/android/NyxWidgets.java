@@ -195,16 +195,33 @@ final class NyxWidgets {
             AppWidgetManager m = AppWidgetManager.getInstance(app);
             lastRefreshAt = SystemClock.elapsedRealtime();
             SharedPreferences p = prefs(app);
-            update(app, m, NyxWidgetA.class, R.layout.widget_a, p, false);
-            update(app, m, NyxWidgetB.class, R.layout.widget_b, p, true);
-            update(app, m, NyxWidgetC.class, R.layout.widget_c, p, false);
+            update(app, m, NyxWidgetA.class, 'A', p);
+            update(app, m, NyxWidgetB.class, 'B', p);
+            update(app, m, NyxWidgetC.class, 'C', p);
         } catch (Exception ignored) {}
     }
 
-    private static void update(Context c, AppWidgetManager m, Class<?> cls, int layout, SharedPreferences p, boolean full) {
+    /** Cada widget na tela pode ter um tamanho diferente: escolhe o layout e desenha um por um. */
+    private static void update(Context c, AppWidgetManager m, Class<?> cls, char kind, SharedPreferences p) {
         int[] ids = m.getAppWidgetIds(new ComponentName(c, cls));
-        if (ids.length == 0) return;
-        boolean isC = layout == R.layout.widget_c;
+        for (int id : ids) {
+            try {
+                android.os.Bundle o = m.getAppWidgetOptions(id);
+                int wDp = o == null ? 0 : o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
+                int hDp = o == null ? 0 : o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
+                if (hDp == 0 && o != null) hDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
+                int layout;
+                if (kind == 'A') layout = hDp >= 92 ? R.layout.widget_a_l : R.layout.widget_a;
+                else if (kind == 'B') layout = hDp >= 215 ? R.layout.widget_b_tall : R.layout.widget_b;
+                else layout = R.layout.widget_c;
+                m.updateAppWidget(id, build(c, cls, kind, layout, p, wDp, hDp));
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static RemoteViews build(Context c, Class<?> cls, char kind, int layout, SharedPreferences p, int wDp, int hDp) {
+        boolean isC = kind == 'C';
+        boolean full = kind == 'B';
 
         String title = p.getString("title", "");
         String artist = p.getString("artist", "");
@@ -225,24 +242,36 @@ final class NyxWidgets {
         v.setImageViewResource(R.id.w_play_ic, playing ? R.drawable.ic_w_pause : R.drawable.ic_w_play);
         v.setInt(R.id.w_play_bg, "setColorFilter", playBg);
         v.setInt(R.id.w_play_ic, "setColorFilter", container);
-        int sideBg = isC ? 0x38FFFFFF : btnBg;
-        int sideIc = isC ? 0xFFFFFFFF : on;
-        v.setInt(R.id.w_prev_bg, "setColorFilter", sideBg);
-        v.setInt(R.id.w_prev_ic, "setColorFilter", sideIc);
-        v.setInt(R.id.w_next_bg, "setColorFilter", sideBg);
-        v.setInt(R.id.w_next_ic, "setColorFilter", sideIc);
+        v.setInt(R.id.w_prev_ic, "setColorFilter", isC ? 0xFFFFFFFF : on);
+        v.setInt(R.id.w_next_ic, "setColorFilter", isC ? 0xFFFFFFFF : on);
+        if (isC) {
+            // vidro escuro sobre a capa (a transparência vem do alpha da imagem, não da cor)
+            v.setInt(R.id.w_prev_bg, "setColorFilter", 0xFF000000);
+            v.setInt(R.id.w_next_bg, "setColorFilter", 0xFF000000);
+            v.setInt(R.id.w_prev_bg, "setImageAlpha", 120);
+            v.setInt(R.id.w_next_bg, "setImageAlpha", 120);
+        } else {
+            v.setInt(R.id.w_prev_bg, "setColorFilter", btnBg);
+            v.setInt(R.id.w_next_bg, "setColorFilter", btnBg);
+        }
 
-        Bitmap cover = loadCover(p.getString("cover", ""), isC);
-        if (cover != null) v.setImageViewBitmap(R.id.w_cover, cover);
-        else if (isC) v.setViewVisibility(R.id.w_cover, android.view.View.GONE); // sem capa: fica a cor do tema
-        else v.setImageViewResource(R.id.w_cover, R.mipmap.ic_launcher);
-
-        if (full) {
-            // enfeite: o mesmo biscoito da capa, bem apagado, no canto
-            if (cover != null) {
+        String coverPath = p.getString("cover", "");
+        if (isC) {
+            Bitmap rect = loadCoverRect(coverPath, wDp > 0 ? wDp : 176, hDp > 0 ? hDp : 176, c.getResources().getDisplayMetrics().density);
+            if (rect != null) v.setImageViewBitmap(R.id.w_cover, rect);
+            else v.setViewVisibility(R.id.w_cover, android.view.View.GONE); // sem capa: fica a cor do tema
+        } else {
+            Bitmap cover = loadCover(coverPath, false);
+            if (cover != null) v.setImageViewBitmap(R.id.w_cover, cover);
+            else v.setImageViewResource(R.id.w_cover, R.mipmap.ic_launcher);
+            if (full && cover != null) {
+                // enfeite: o mesmo biscoito da capa, bem apagado, no canto
                 v.setImageViewBitmap(R.id.w_deco, cover);
                 v.setInt(R.id.w_deco, "setImageAlpha", 56);
             }
+        }
+
+        if (full) {
             boolean fav = p.getBoolean("favorite", false);
             v.setImageViewResource(R.id.w_fav_ic, fav ? R.drawable.ic_w_heart : R.drawable.ic_w_heart_border);
             v.setInt(R.id.w_fav_bg, "setColorFilter", btnBg);
@@ -259,7 +288,7 @@ final class NyxWidgets {
             v.setOnClickPendingIntent(R.id.w_cover, pi);
             v.setOnClickPendingIntent(R.id.w_info, pi);
         }
-        m.updateAppWidget(ids, v);
+        return v;
     }
 
     private static PendingIntent action(Context c, Class<?> cls, String action, int code) {
@@ -295,6 +324,51 @@ final class NyxWidgets {
             if (square) cachedSquare = out; else cachedCookie = out;
             return out;
         } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static String rectKey = "";
+    private static Bitmap rectBitmap = null;
+
+    /** Capa que cobre o widget inteiro, nas proporções dele e com todos os cantos arredondados. */
+    private static Bitmap loadCoverRect(String path, int wDp, int hDp, float density) {
+        if (path == null || path.isEmpty()) return null;
+        try {
+            String key = path + "|" + wDp + "x" + hDp;
+            if (key.equals(rectKey) && rectBitmap != null) return rectBitmap;
+
+            float s = Math.min(1f, 480f / (Math.max(wDp, hDp) * density)); // limite de memória do widget
+            int w = Math.max(32, Math.round(wDp * density * s));
+            int h = Math.max(32, Math.round(hDp * density * s));
+
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(path, o);
+            int sample = 1;
+            while (o.outWidth / (sample * 2) >= w && o.outHeight / (sample * 2) >= h) sample *= 2;
+            o = new BitmapFactory.Options();
+            o.inSampleSize = sample;
+            Bitmap src = BitmapFactory.decodeFile(path, o);
+            if (src == null) return null;
+
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas cv = new Canvas(out);
+            float r = 44f * density * s;
+            Path shape = new Path();
+            shape.addRoundRect(new RectF(0, 0, w, h), r, r, Path.Direction.CW);
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            cv.drawPath(shape, paint);
+            paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+            float sc = Math.max(w / (float) src.getWidth(), h / (float) src.getHeight());
+            float dw = src.getWidth() * sc, dh = src.getHeight() * sc;
+            cv.drawBitmap(src, null, new RectF((w - dw) / 2f, (h - dh) / 2f, (w + dw) / 2f, (h + dh) / 2f), paint);
+            src.recycle();
+
+            rectKey = key;
+            rectBitmap = out;
+            return out;
+        } catch (Throwable ex) {
             return null;
         }
     }

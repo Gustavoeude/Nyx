@@ -145,10 +145,12 @@ for (const d of ["layout", "drawable", "xml"]) {
   for (const f of fs.readdirSync(from)) fs.copyFileSync(path.join(from, f), path.join(to, f));
 }
 // ícone monocromático e transparente usado nas notificações de mídia
-const notificationIcon = path.join(resSrc, "drawable-nodpi/ic_notification_music.png");
+// (também as prévias dos widgets que aparecem no seletor de widgets)
 const notificationDrawableDir = path.join(res, "drawable-nodpi");
 fs.mkdirSync(notificationDrawableDir, { recursive: true });
-fs.copyFileSync(notificationIcon, path.join(notificationDrawableDir, "ic_notification_music.png"));
+for (const f of fs.readdirSync(path.join(resSrc, "drawable-nodpi"))) {
+  fs.copyFileSync(path.join(resSrc, "drawable-nodpi", f), path.join(notificationDrawableDir, f));
+}
 // ícone do botão "fechar" (X) do card de música
 fs.mkdirSync(path.join(res, "drawable"), { recursive: true });
 fs.writeFileSync(
