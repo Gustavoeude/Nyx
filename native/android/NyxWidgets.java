@@ -9,7 +9,6 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
@@ -95,13 +94,30 @@ final class NyxWidgets {
         } catch (Exception ignored) {}
     }
 
-    /** O app informou a música atual e se ela é favorita (para o coração do widget). */
-    static void setInfo(Context c, String id, boolean favorite) {
+    /** O app informou a música atual, se ela é favorita e (opcional) as cores do tema. */
+    static void setInfo(Context c, String id, boolean favorite, String colors) {
         try {
             Context app = c.getApplicationContext();
-            prefs(app).edit().putString("id", id == null ? "" : id).putBoolean("favorite", favorite).apply();
+            SharedPreferences.Editor e = prefs(app).edit();
+            if (id != null && !id.isEmpty()) e.putString("id", id).putBoolean("favorite", favorite);
+            if (colors != null && !colors.isEmpty()) e.putString("colors", colors);
+            e.apply();
             if (hasWidgets(app)) refresh(app);
         } catch (Exception ignored) {}
+    }
+
+    /** Cores do tema: container, container dos botões, texto, texto secundário, play (padrão: azul do Nyx). */
+    private static int[] palette(SharedPreferences p) {
+        int[] d = { 0xFF141C80, 0xFF232B9A, 0xFFEEF0FF, 0xFFAEB4F5, 0xFFDDE0FF };
+        try {
+            String[] s = p.getString("colors", "").split(",");
+            if (s.length == 5) {
+                int[] o = new int[5];
+                for (int i = 0; i < 5; i++) o[i] = 0xFF000000 | (int) Long.parseLong(s[i].trim().replace("#", ""), 16);
+                return o;
+            }
+        } catch (Exception ignored) {}
+        return d;
     }
 
     /** Favoritos pedidos pelo widget que o app ainda não aplicou (id -> favorito). */
@@ -195,19 +211,42 @@ final class NyxWidgets {
         boolean has = !title.isEmpty();
         boolean playing = p.getBoolean("playing", false);
 
+        int[] pal = palette(p);
+        int container = pal[0], btnBg = pal[1], on = pal[2], sub = pal[3], playBg = pal[4];
+
         RemoteViews v = new RemoteViews(c.getPackageName(), layout);
         v.setTextViewText(R.id.w_title, has ? title : "Nyx");
         v.setTextViewText(R.id.w_artist, has ? artist : "Toque para abrir");
-        v.setImageViewResource(R.id.w_play, playing ? R.drawable.ic_w_pause : R.drawable.ic_w_play);
+        v.setTextColor(R.id.w_title, isC ? 0xFFFFFFFF : on);
+        v.setTextColor(R.id.w_artist, isC ? 0xFFD2D5F5 : sub);
+        v.setInt(R.id.w_bg, "setColorFilter", container);
+
+        // botões: fundo e ícone tingidos com as cores do tema
+        v.setImageViewResource(R.id.w_play_ic, playing ? R.drawable.ic_w_pause : R.drawable.ic_w_play);
+        v.setInt(R.id.w_play_bg, "setColorFilter", playBg);
+        v.setInt(R.id.w_play_ic, "setColorFilter", container);
+        int sideBg = isC ? 0x38FFFFFF : btnBg;
+        int sideIc = isC ? 0xFFFFFFFF : on;
+        v.setInt(R.id.w_prev_bg, "setColorFilter", sideBg);
+        v.setInt(R.id.w_prev_ic, "setColorFilter", sideIc);
+        v.setInt(R.id.w_next_bg, "setColorFilter", sideBg);
+        v.setInt(R.id.w_next_ic, "setColorFilter", sideIc);
 
         Bitmap cover = loadCover(p.getString("cover", ""), isC);
         if (cover != null) v.setImageViewBitmap(R.id.w_cover, cover);
+        else if (isC) v.setViewVisibility(R.id.w_cover, android.view.View.GONE); // sem capa: fica a cor do tema
         else v.setImageViewResource(R.id.w_cover, R.mipmap.ic_launcher);
 
         if (full) {
-            long dur = p.getLong("dur", 0), pos = p.getLong("pos", 0);
-            v.setProgressBar(R.id.w_progress, 1000, dur > 0 ? (int) Math.min(1000, pos * 1000 / dur) : 0, false);
-            v.setImageViewResource(R.id.w_fav, p.getBoolean("favorite", false) ? R.drawable.ic_w_heart : R.drawable.ic_w_heart_border);
+            // enfeite: o mesmo biscoito da capa, bem apagado, no canto
+            if (cover != null) {
+                v.setImageViewBitmap(R.id.w_deco, cover);
+                v.setInt(R.id.w_deco, "setImageAlpha", 56);
+            }
+            boolean fav = p.getBoolean("favorite", false);
+            v.setImageViewResource(R.id.w_fav_ic, fav ? R.drawable.ic_w_heart : R.drawable.ic_w_heart_border);
+            v.setInt(R.id.w_fav_bg, "setColorFilter", btnBg);
+            v.setInt(R.id.w_fav_ic, "setColorFilter", fav ? 0xFFFF8FAE : on);
             v.setOnClickPendingIntent(R.id.w_fav, action(c, cls, ACT_FAV, 4));
         }
         v.setOnClickPendingIntent(R.id.w_prev, action(c, cls, ACT_PREV, 1));
@@ -282,23 +321,20 @@ final class NyxWidgets {
         return out;
     }
 
-    /** Capa em "biscoito" (a mesma ideia das formas do app). */
+    /** Capa em "biscoito": 12 lóbulos suaves, igual às formas do app. */
     private static Bitmap cookie(Bitmap src, int size) {
         Path path = new Path();
-        int n = 12;
-        float cx = size / 2f, r1 = size / 2f, r2 = size / 2f * 0.9f;
-        for (int i = 0; i < n * 2; i++) {
-            double a = Math.PI * i / n - Math.PI / 2;
-            float r = i % 2 == 0 ? r1 : r2;
-            float x = cx + (float) Math.cos(a) * r, y = cx + (float) Math.sin(a) * r;
+        int steps = 180;
+        float half = size / 2f;
+        for (int i = 0; i < steps; i++) {
+            double a = 2 * Math.PI * i / steps;
+            double r = 0.93 + 0.07 * Math.cos(12 * a);
+            float x = half + (float) (half * r * Math.cos(a));
+            float y = half + (float) (half * r * Math.sin(a));
             if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
         }
         path.close();
-        Paint dummy = new Paint();
-        dummy.setPathEffect(new CornerPathEffect(size * 0.06f));
-        Path smooth = new Path();
-        dummy.getFillPath(path, smooth);
-        return mask(src, size, smooth);
+        return mask(src, size, path);
     }
 
     /** Capa quadrada de cantos arredondados (widget C, a capa cobre o widget inteiro). */

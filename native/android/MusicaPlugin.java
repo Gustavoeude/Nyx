@@ -330,7 +330,7 @@ public class MusicaPlugin extends Plugin {
     @PluginMethod
     public void widgetInfo(PluginCall call) {
         try {
-            NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false));
+            NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false), call.getString("colors", ""));
         } catch (Exception ignored) {}
         call.resolve();
     }
