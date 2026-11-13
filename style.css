@@ -2809,12 +2809,9 @@ html.ob-pending body > *:not(.ob):not(script):not(link) { visibility: hidden; }
   color: var(--md-on-surface);
 }
 .home-eyebrow {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  display: block;
+  margin: 0 0 4px 3px;
+  max-width: 100%;
 }
 .home-actions { display: flex; gap: 10px; }
 .home-settings {
