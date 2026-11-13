@@ -844,6 +844,39 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (player == null) return;
         EventSink k = sink;
         if (k != null) k.emit("state", stateObject(error));
+        publishWidgets();
+    }
+
+    /** Mantém os widgets da tela inicial em dia (limitado dentro do NyxWidgets). */
+    private void publishWidgets() {
+        try {
+            MediaItem it = player.getCurrentMediaItem();
+            if (it == null) return;
+            int st = player.getPlaybackState();
+            boolean playing = player.getPlayWhenReady() && st != Player.STATE_ENDED && st != Player.STATE_IDLE;
+            long dur = player.getDuration();
+            Uri art = it.mediaMetadata.artworkUri;
+            NyxWidgets.publish(this, it.mediaId,
+                    it.mediaMetadata.title == null ? "" : it.mediaMetadata.title.toString(),
+                    it.mediaMetadata.artist == null ? "" : it.mediaMetadata.artist.toString(),
+                    art == null || art.getPath() == null ? "" : art.getPath(),
+                    playing, player.getCurrentPosition(), dur == C.TIME_UNSET || dur < 0 ? 0L : dur);
+        } catch (Exception ignored) {}
+    }
+
+    /** Botões dos widgets: usa o mesmo caminho dos botões da notificação. */
+    void widgetControl(String what) {
+        if (session == null || player == null) return;
+        Player p = session.getPlayer();
+        if ("prev".equals(what)) {
+            p.seekToPrevious();
+        } else if ("next".equals(what)) {
+            p.seekToNext();
+        } else {
+            int st = p.getPlaybackState();
+            if (p.getPlayWhenReady() && st != Player.STATE_ENDED && st != Player.STATE_IDLE) p.pause();
+            else p.play();
+        }
     }
 
     @Nullable
@@ -866,6 +899,7 @@ public class MusicaPlaybackService extends MediaSessionService {
     @Override
     public void onDestroy() {
         saveLast();
+        NyxWidgets.markStopped(this);
         MAIN.removeCallbacks(ticker);
         MAIN.removeCallbacks(fader);
         cancelSleep();

@@ -166,6 +166,29 @@ function applyPalette() {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", themeColor);
   syncSystemBars(themeColor, light);
+  syncWidgetColors(h, sat);
+}
+
+// Widgets da tela inicial: usam um tom escuro da cor do app (e um tom claro no botão play).
+let lastWidgetColors = "";
+function syncWidgetColors(h, sat) {
+  if (!MN || typeof MN.widgetInfo !== "function") return;
+  try {
+    const ctx = document.createElement("canvas").getContext("2d");
+    const hex = css => { ctx.fillStyle = css; return ctx.fillStyle; };
+    const s = Math.max(sat, 30);
+    const colors = [
+      hex(hsl(h, s, 26)),   // fundo do widget
+      hex(hsl(h, s, 36)),   // botões anterior/próxima/coração
+      hex(hsl(h, 100, 94)), // texto
+      hex(hsl(h, 70, 82)),  // texto secundário
+      hex(hsl(h, 100, 90))  // botão play
+    ].join(",");
+    if (colors === lastWidgetColors) return;
+    lastWidgetColors = colors;
+    const r = MN.widgetInfo({ id: "", favorite: false, colors });
+    if (r && typeof r.catch === "function") r.catch(() => {}); // APK antigo sem o método
+  } catch (e) { logErr("tema:widgets", e); }
 }
 
 // Android: a faixa de baixo do sistema usa a mesma cor do fundo do app.
