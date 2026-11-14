@@ -576,7 +576,7 @@ async function nativePushUpcoming() {
     // parar a qualquer momento, e o que já foi enviado ao player nativo precisa bastar sozinho.
     const planned = upcomingIds(NATIVE_LOOKAHEAD);
     // a lista continua além da fila nativa? então ela gira em círculo e nunca acaba sozinha
-    const loop = shuffle || repeat === "all" || planned.length >= NATIVE_LOOKAHEAD;
+    const loop = repeat === "all";
 
     // o que o player nativo já tem na fila: só falta enviar o resto (sem copiar tudo de novo)
     let have = [];
