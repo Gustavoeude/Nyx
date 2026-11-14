@@ -71,6 +71,7 @@ function makeSafSong(item, folder) {
     artist: hasArtist ? parts[0].trim() : "Arquivo local",
     album: "",
     genre: "",
+    duration: 0,
     sourceKey: "saf::" + item.uri,
     sourceUri: item.uri,
     sourceTreeUri: folder.uri,
@@ -80,6 +81,7 @@ function makeSafSong(item, folder) {
     sourceMimeType: item.mimeType || "application/octet-stream",
     sourceCoverChecked: false,
     sourceMetadataChecked: false,
+    sourceMetadataVersion: 0,
     favorite: false,
     file: null,
     url: null,
@@ -115,7 +117,7 @@ async function loadSafMetadata(entries) {
   const unique = [];
   for (const entry of entries) {
     const key = String(entry.song.id);
-    if ((entry.song.sourceMetadataChecked && (entry.song.coverBlob || entry.song.sourceCoverChecked)) || safCoverJobs.has(key)) continue;
+    if ((Number(entry.song.sourceMetadataVersion) >= 1 && entry.song.sourceMetadataChecked && (entry.song.coverBlob || entry.song.sourceCoverChecked)) || safCoverJobs.has(key)) continue;
     const job = Promise.resolve();
     safCoverJobs.set(key, job);
     unique.push({ ...entry, key });
@@ -140,6 +142,7 @@ async function loadSafMetadata(entries) {
     while (cursor < unique.length) {
       const entry = unique[cursor++];
       const { song, item, key } = entry;
+      const metadataVersionBefore = Number(song.sourceMetadataVersion) || 0;
       let metadataRead = false;
       try {
         if (MN && typeof MN.extractEmbeddedCover === "function") {
@@ -147,6 +150,7 @@ async function loadSafMetadata(entries) {
           metadataRead = true;
           song.sourceCoverChecked = true;
           song.sourceMetadataChecked = true;
+          song.sourceMetadataVersion = 1;
           const title = String(result && result.title || "").trim();
           const artist = String(result && (result.artist || result.albumArtist) || "").trim();
           const album = String(result && result.album || "").trim();
@@ -155,6 +159,8 @@ async function loadSafMetadata(entries) {
           if (artist) song.artist = artist;
           if (album) song.album = album;
           if (genre) song.genre = typeof cleanGenre === "function" ? cleanGenre(genre) : genre;
+          const duration = Number(result && result.durationMs) / 1000;
+          if (Number.isFinite(duration) && duration > 0 && duration <= 3600) song.duration = duration;
           if (result && result.base64) {
             const binary = atob(result.base64);
             const bytes = new Uint8Array(binary.length);
@@ -172,11 +178,18 @@ async function loadSafMetadata(entries) {
       }
 
       if (metadataRead) {
+        if (metadataVersionBefore < 1) {
+          song.lyricsSearchAt = 0;
+          if (song.lyricsRetryReason !== "rate" && song.lyricsRetryReason !== "busy") {
+            song.lyricsRetryAt = 0;
+            song.lyricsRetryReason = "";
+          }
+        }
         pending.push(song);
         if (pending.length >= 4) await flush();
       }
       if (!song.coverBlob && typeof fetchOnlineCover === "function") void fetchOnlineCover(song);
-      if (!song.lyrics && typeof requestOnlineLyrics === "function") void requestOnlineLyrics(song);
+      if (typeof maybeRequestLyrics === "function") void maybeRequestLyrics(song);
       completed++;
       if (completed % 8 === 0) await flushQueue;
       safCoverJobs.delete(key);
@@ -194,6 +207,7 @@ async function importSafListing(listing, folder, ignoredUris = []) {
   const ignored = new Set(ignoredUris || []);
   const fresh = [];
   const coverTargets = [];
+  const sidecarTargets = [];
 
   for (const item of audio) {
     if (!item.uri || ignored.has(item.uri)) continue;
@@ -208,7 +222,8 @@ async function importSafListing(listing, folder, ignoredUris = []) {
         duplicate.sourceLastModified = Number(item.lastModified) || duplicate.sourceLastModified || 0;
         duplicate.sourceTreeUri = folder.uri;
         duplicate.sourceRelativePath = keys.relativePath;
-        if (!duplicate.sourceMetadataChecked || (!duplicate.coverBlob && !duplicate.sourceCoverChecked)) coverTargets.push({ song: duplicate, item });
+        if (duplicate.sourceUri) sidecarTargets.push({ song: duplicate, item });
+        if (Number(duplicate.sourceMetadataVersion) < 1 || !duplicate.sourceMetadataChecked || (!duplicate.coverBlob && !duplicate.sourceCoverChecked)) coverTargets.push({ song: duplicate, item });
       }
       continue;
     }
@@ -216,6 +231,7 @@ async function importSafListing(listing, folder, ignoredUris = []) {
     songs.push(song);
     fresh.push({ song, item });
     coverTargets.push({ song, item });
+    sidecarTargets.push({ song, item });
   }
 
   if (fresh.length) {
@@ -226,11 +242,12 @@ async function importSafListing(listing, folder, ignoredUris = []) {
 
   // Sidecars são pequenos; lê-los sem bloquear a aparição da biblioteca.
   const sidecarByPath = new Map(sidecars.map(item => [normalizedSidecarPath(item), item]));
-  const sidecarTask = Promise.all(fresh.map(async ({ song, item }) => {
+  const sidecarTask = Promise.all(sidecarTargets.map(async ({ song, item }) => {
     const sidecar = sidecarByPath.get(normalizedSidecarPath(item));
-    if (!sidecar || song.lyrics) return;
+    if (!sidecar || hasSyncedLyrics(song)) return;
     const text = await readSafSidecar(sidecar);
-    if (!text || !parseLrc(text).lines.length || !songs.includes(song) || song.lyrics) return;
+    const parsed = text ? parseLrc(text) : null;
+    if (!parsed || !parsed.lines.length || !songs.includes(song) || hasSyncedLyrics(song) || (song.lyrics && !parsed.synced)) return;
     song.lyrics = text;
     song.lyricsSource = "lrc";
     await dbPut(toRecord(song));

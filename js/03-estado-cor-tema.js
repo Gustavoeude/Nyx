@@ -32,7 +32,7 @@ let settings = Object.assign(
 if (!settings.shapes || typeof settings.shapes !== "object") settings.shapes = {};
 
 function saveSettings() {
-  lsSet("settings", settings);
+  return lsSet("settings", settings);
 }
 
 const getSong = id => songs.find(s => s.id === id) || null;

@@ -295,6 +295,7 @@ public class MusicaPlugin extends Plugin {
                 putMetadata(response, "albumArtist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST));
                 putMetadata(response, "album", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM));
                 putMetadata(response, "genre", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE));
+                putMetadata(response, "durationMs", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
                 if (artwork == null || artwork.length == 0) {
                     response.put("base64", "");
                     call.resolve(response);

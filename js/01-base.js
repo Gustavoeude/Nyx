@@ -156,8 +156,10 @@ function lsGet(key, fallback) {
 function lsSet(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
     reportStorageIssue();
+    return false;
   }
 }
 
@@ -302,6 +304,7 @@ function toRecord(song) {
     artist: song.artist,
     album: song.album || "",
     genre: song.genre || "",
+    duration: Number(song.duration) || 0,
     sourceKey: song.sourceKey || (song.file ? fileIdentity(song.file) : song.sourceUri || ""),
     sourceUri: song.sourceUri || "",
     sourceTreeUri: song.sourceTreeUri || "",
@@ -311,6 +314,7 @@ function toRecord(song) {
     sourceMimeType: song.sourceMimeType || "",
     sourceCoverChecked: !!song.sourceCoverChecked,
     sourceMetadataChecked: !!song.sourceMetadataChecked,
+    sourceMetadataVersion: Number(song.sourceMetadataVersion) || 0,
     favorite: song.favorite,
     file: song.file,
     coverBlob: song.coverBlob || null,
@@ -342,6 +346,7 @@ function makeSong(r) {
     artist: r.artist,
     album: r.album || "",
     genre: r.genre || "",
+    duration: Number(r.duration) || 0,
     sourceKey: r.sourceKey || (r.file ? fileIdentity(r.file) : r.sourceUri || ""),
     sourceUri: r.sourceUri || "",
     sourceTreeUri: r.sourceTreeUri || "",
@@ -351,6 +356,7 @@ function makeSong(r) {
     sourceMimeType: r.sourceMimeType || "",
     sourceCoverChecked: !!r.sourceCoverChecked,
     sourceMetadataChecked: !!r.sourceMetadataChecked,
+    sourceMetadataVersion: Number(r.sourceMetadataVersion) || 0,
     favorite: !!r.favorite,
     file: r.file,
     url: r.file ? URL.createObjectURL(r.file) : null,

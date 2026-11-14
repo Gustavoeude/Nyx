@@ -30,6 +30,7 @@ function lyricsFromTag(value) {
 }
 
 const LRCLIB_SEARCH_URL = "https://lrclib.net/api/search";
+const LRCLIB_GET_URL = "https://lrclib.net/api/get";
 const LRCLIB_CLIENT = "ReprodutorMusicalWeb/1.0 (https://github.com/Gustavoeude/Aplicativo-de-reprodutor-de)";
 const lyricsLookupStatus = new Map();
 const lyricsLookupInFlight = new Map();
@@ -55,6 +56,8 @@ function lyricsLookupArtist(song) {
 }
 
 function readLocalTrackDuration(song) {
+  const cached = Number(song && song.duration);
+  if (Number.isFinite(cached) && cached > 0) return Promise.resolve(cached);
   if (!song || !song.url) return Promise.resolve(null);
   return new Promise(resolve => {
     const probe = document.createElement("audio");
@@ -95,6 +98,12 @@ function chooseLyricsRecord(song, records, duration) {
     ? titleMatches.filter(record => normalizeLyricsLookup(record.artistName) === artist)
     : titleMatches;
 
+  if (!candidates.length && artist) {
+    candidates = titleMatches.filter(record => {
+      const recordArtist = normalizeLyricsLookup(record.artistName);
+      return recordArtist && (recordArtist.includes(artist) || artist.includes(recordArtist));
+    });
+  }
   if (!candidates.length) candidates = titleMatches;
 
   const artists = new Set(candidates.map(record => normalizeLyricsLookup(record.artistName)).filter(Boolean));
@@ -106,7 +115,11 @@ function chooseLyricsRecord(song, records, duration) {
     const durationMatches = candidates.filter(record =>
       Number.isFinite(Number(record.duration)) && Math.abs(Number(record.duration) - duration) <= 5
     );
-    if (durationMatches.length) candidates = durationMatches;
+    const syncedNear = candidates.filter(record => record.syncedLyrics &&
+      Number.isFinite(Number(record.duration)) && Math.abs(Number(record.duration) - duration) <= 10
+    );
+    if (syncedNear.length) candidates = syncedNear;
+    else if (durationMatches.length) candidates = durationMatches;
     else if (candidates.some(record => Number.isFinite(Number(record.duration)))) {
       // sem versão parecida: aceita só até 10 s de diferença; mais que isso é outra
       // versão (remix, estendida...) e a letra sairia de sincronia
@@ -117,37 +130,27 @@ function chooseLyricsRecord(song, records, duration) {
       candidates = near;
     }
   }
-  if (!duration && candidates.length > 1) {
-    const albums = new Set(candidates.map(record => normalizeLyricsLookup(record.albumName)).filter(Boolean));
-    if (albums.size > 1) return null;
-  }
   const album = normalizeLyricsLookup(song && song.album);
   candidates.sort((a, b) => {
+    const sync = Number(!!b.syncedLyrics) - Number(!!a.syncedLyrics);
+    if (sync) return sync;
     if (album) {
       const albumA = Number(normalizeLyricsLookup(a.albumName) === album);
       const albumB = Number(normalizeLyricsLookup(b.albumName) === album);
       if (albumA !== albumB) return albumB - albumA;
     }
-    const sync = Number(!!b.syncedLyrics) - Number(!!a.syncedLyrics);
-    if (sync) return sync;
     if (Number.isFinite(duration)) return Math.abs(Number(a.duration) - duration) - Math.abs(Number(b.duration) - duration);
     return 0;
   });
   return candidates.find(record => record.syncedLyrics || record.plainLyrics) || null;
 }
 
-async function fetchLyricsRecord(song) {
-  const title = lyricsLookupTitle(song);
-  if (!title) return null;
-  const params = new URLSearchParams({ track_name: title });
-  const artist = lyricsLookupArtist(song);
-  if (artist) params.set("artist_name", song.artist);
-  if (song.album) params.set("album_name", song.album);
+async function fetchLyricsJson(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   let response;
   try {
-    response = await fetch(LRCLIB_SEARCH_URL + "?" + params.toString(), {
+    response = await fetch(url, {
       method: "GET",
       headers: { "Lrclib-Client": LRCLIB_CLIENT },
       signal: controller.signal
@@ -155,32 +158,60 @@ async function fetchLyricsRecord(song) {
   } finally {
     clearTimeout(timeout);
   }
-  if (response.status === 429) {
-    const error = new Error("rate-limited");
+  if (response.status === 404) return null;
+  if (response.status === 429 || response.status === 503) {
+    const error = new Error(response.status === 429 ? "rate-limited" : "service-busy");
     const retryHeader = response.headers.get("Retry-After");
     const retrySeconds = Number(retryHeader);
     const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
-    error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
+    const baseDelay = Number.isFinite(retrySeconds) && retrySeconds > 0
       ? retrySeconds
-      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 60);
-    error.retryReason = "rate";
-    throw error;
-  }
-  if (response.status === 503) {
-    const error = new Error("service-busy");
-    const retryHeader = response.headers.get("Retry-After");
-    const retrySeconds = Number(retryHeader);
-    const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
-    error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
-      ? retrySeconds
-      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 5);
-    error.retryReason = "busy";
+      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : response.status === 429 ? 60 : 5;
+    error.retryAfter = Math.max(1, Math.ceil(baseDelay * (1 + Math.random() * 0.3)));
+    error.retryReason = response.status === 429 ? "rate" : "busy";
     throw error;
   }
   if (!response.ok) throw new Error("lyrics-service-" + response.status);
-  const records = await response.json();
+  return response.json();
+}
+
+async function fetchLyricsRecord(song, force = false) {
+  const title = lyricsLookupTitle(song);
+  if (!title) return null;
+  const artist = lyricsLookupArtist(song);
   const duration = await readLocalTrackDuration(song);
-  return chooseLyricsRecord(song, records, duration);
+  let exactRecord = null;
+  let attemptedSignature = false;
+
+  // O /api/get usa a assinatura completa e a duração para reduzir falsos matches.
+  if (artist && Number.isFinite(duration) && duration > 0 && duration <= 3600) {
+    attemptedSignature = true;
+    const signature = new URLSearchParams({
+      track_name: title,
+      artist_name: song.artist,
+      duration: String(Math.round(duration))
+    });
+    if (song.album) signature.set("album_name", song.album);
+    exactRecord = await fetchLyricsJson(LRCLIB_GET_URL + "?" + signature.toString());
+    if (exactRecord && exactRecord.syncedLyrics) return exactRecord;
+  }
+
+  if (attemptedSignature) await new Promise(resolve => setTimeout(resolve, 250));
+  const params = new URLSearchParams({ track_name: title });
+  if (artist) params.set("artist_name", song.artist);
+  if (song.album) params.set("album_name", song.album);
+  const records = await fetchLyricsJson(LRCLIB_SEARCH_URL + "?" + params.toString());
+  let selected = chooseLyricsRecord(song, records, duration);
+  if (force && (!selected || !selected.syncedLyrics)) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const broad = new URLSearchParams({ q: [title, song.artist || ""].filter(Boolean).join(" ") });
+    const broaderRecords = await fetchLyricsJson(LRCLIB_SEARCH_URL + "?" + broad.toString());
+    const broaderSelected = chooseLyricsRecord(song, broaderRecords, duration);
+    if (broaderSelected && broaderSelected.syncedLyrics) selected = broaderSelected;
+    else if (!selected) selected = broaderSelected;
+  }
+  if (selected && selected.syncedLyrics) return selected;
+  return exactRecord || selected || null;
 }
 
 function updateLyricsLookupView(song) {
@@ -219,7 +250,7 @@ function requestOnlineLyrics(song, force = false) {
     updateLyricsLookupView(song);
     lastLyricsLookupAt = Date.now();
     try {
-      const record = await fetchLyricsRecord(song);
+      const record = await fetchLyricsRecord(song, force);
       if (!songs.includes(song)) return false;
       song.lyricsSearchAt = Date.now();
       song.lyricsRetryAt = 0;
@@ -236,7 +267,7 @@ function requestOnlineLyrics(song, force = false) {
         lyricsLookupStatus.set(song.id, song.lyrics ? "found" : "not-found");
       } else if (song.lyrics) {
         // Mantém a letra já salva se a busca não encontrou uma versão sincronizada.
-        lyricsLookupStatus.set(song.id, "found");
+        lyricsLookupStatus.set(song.id, record && !record.syncedLyrics ? "unsynced" : "found");
       } else {
         lyricsLookupStatus.set(song.id, "not-found");
       }
@@ -264,6 +295,12 @@ function requestOnlineLyrics(song, force = false) {
   const tracked = task.finally(() => lyricsLookupInFlight.delete(song.id));
   lyricsLookupInFlight.set(song.id, tracked);
   return tracked;
+}
+
+function maybeRequestLyrics(song) {
+  if (!settings.autoLyrics || !song || hasSyncedLyrics(song)) return Promise.resolve(false);
+  if (song.lyrics && song.lyricsSearchAt && Date.now() - song.lyricsSearchAt < 24 * 60 * 60 * 1000) return Promise.resolve(false);
+  return requestOnlineLyrics(song, !!song.lyrics);
 }
 
 async function fetchOnlineCover(song, force) {
@@ -351,7 +388,7 @@ async function addFile(file, automaticLyrics = "") {
       if (duplicate.id === currentId) renderLyrics(duplicate);
       return { added: false, stored, lyricsAdded: true };
     }
-    if (!duplicate.lyrics && settings.autoLyrics) requestOnlineLyrics(duplicate);
+    maybeRequestLyrics(duplicate);
     return { added: false, stored: true, lyricsAdded: false };
   }
 
@@ -414,21 +451,21 @@ async function addFile(file, automaticLyrics = "") {
         dbPut(toRecord(song));
         refreshAll();
         if (!song.coverBlob) fetchOnlineCover(song);
-        if (!song.lyrics && settings.autoLyrics) requestOnlineLyrics(song);
+        maybeRequestLyrics(song);
         },
         onError: () => {
           refreshAll();
           fetchOnlineCover(song);
-          if (!song.lyrics && settings.autoLyrics) requestOnlineLyrics(song);
+          maybeRequestLyrics(song);
         }
       });
     } catch {
       showToast("A música foi adicionada, mas não consegui ler suas informações.");
-      if (!song.lyrics && settings.autoLyrics) requestOnlineLyrics(song);
+      maybeRequestLyrics(song);
     }
   } else {
     fetchOnlineCover(song);
-    if (!song.lyrics && settings.autoLyrics) requestOnlineLyrics(song);
+    maybeRequestLyrics(song);
   }
 
   return { added: true, stored, lyricsAdded: !!automaticLyrics };

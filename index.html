@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Fontes carregam em segundo plano: a página aparece na hora, mesmo com internet lenta -->
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=53">
+  <link rel="stylesheet" href="style.css?v=54">
   <script>
     /* Primeira instalação: esconde o app até o tutorial abrir (evita ver a tela inicial antes). */
     try {
@@ -28,6 +28,7 @@
 </head>
 
 <body data-page="home">
+  <div class="wallpaper-layer" aria-hidden="true"></div>
   <audio id="audio" preload="metadata"></audio>
   <input type="file" id="fileInput" accept="audio/*,.lrc" multiple hidden>
   <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
@@ -271,17 +272,17 @@
 
   <script src="jsmediatags.min.js?v=32"></script>
   <script src="js/00-erros.js?v=41"></script>
-  <script src="js/01-base.js?v=52"></script>
+  <script src="js/01-base.js?v=53"></script>
   <script src="js/02-player-nativo.js?v=41"></script>
-  <script src="js/03-estado-cor-tema.js?v=46"></script>
+  <script src="js/03-estado-cor-tema.js?v=47"></script>
   <script src="js/04-navegacao-dialogos.js?v=41"></script>
-  <script src="js/05-importar.js?v=44"></script>
+  <script src="js/05-importar.js?v=45"></script>
   <script src="js/06-playlists-listas.js?v=49"></script>
   <script src="js/07-reproducao.js?v=45"></script>
   <script src="js/08-progresso-player-completo.js?v=45"></script>
-  <script src="js/09-ajustes.js?v=51"></script>
-  <script src="js/10-fontes-letras.js?v=41"></script>
-  <script src="js/pasta-monitorada.js?v=5"></script>
+  <script src="js/09-ajustes.js?v=52"></script>
+  <script src="js/10-fontes-letras.js?v=42"></script>
+  <script src="js/pasta-monitorada.js?v=6"></script>
   <script src="js/12-onboarding.js?v=9"></script>
   <script src="js/13-fila-salva.js?v=2"></script>
   <script src="js/14-audio-extras.js?v=1"></script>

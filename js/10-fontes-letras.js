@@ -255,6 +255,30 @@ function renderLyrics(song) {
     box.appendChild(p);
   });
 
+  if (!lrcSynced) {
+    const actions = el("div", "lyrics-actions");
+    const searchSynced = el("button", "tonal-btn");
+    searchSynced.appendChild(el("span", "material-symbols-rounded", "sync"));
+    searchSynced.appendChild(document.createTextNode("Buscar letra sincronizada"));
+    const lookupState = lyricsLookupStatus.get(song && song.id);
+    if (lookupState === "searching") {
+      searchSynced.disabled = true;
+      searchSynced.lastChild.textContent = "Buscando versão sincronizada…";
+    }
+    searchSynced.onclick = () => {
+      if (song) requestOnlineLyrics(song, true);
+    };
+    actions.appendChild(searchSynced);
+    box.appendChild(actions);
+    const lookupNotes = {
+      "not-found": "Não encontramos outra versão sincronizada para esta faixa.",
+      unsynced: "A busca não retornou uma versão sincronizada; mantive a letra atual.",
+      error: "Não foi possível consultar a busca agora. Verifique a conexão e tente novamente.",
+      limited: "A busca está temporariamente limitada. Tente novamente mais tarde."
+    };
+    if (lookupNotes[lookupState]) box.appendChild(el("small", "lyrics-search-note", lookupNotes[lookupState]));
+  }
+
   if (lrcSynced) $("fpStage").appendChild(buildLyricsAdjust());
 
   if (song.lyricsSource === "lrclib") {
@@ -415,4 +439,3 @@ lrcInput.addEventListener("change", async () => {
   if (song.id === currentId) renderLyrics(song);
   showToast("Letra adicionada");
 });
-

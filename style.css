@@ -61,9 +61,8 @@ body.no-scroll {
   overflow: hidden;
 }
 
-/* Papel de parede opcional: fica atrás da interface, sem alterar a navegação */
-body::after {
-  content: "";
+/* Papel de parede opcional: fica atrás da interface, sem compartilhar o pseudo do rodapé */
+.wallpaper-layer {
   position: fixed;
   inset: -16px;
   z-index: 0;
@@ -77,7 +76,7 @@ body::after {
   transform: scale(1.025);
   transition: opacity .25s ease, filter .25s ease;
 }
-body.has-wallpaper::after {
+body.has-wallpaper .wallpaper-layer {
   opacity: var(--wallpaper-opacity, .28);
 }
 .wallpaper-preview {

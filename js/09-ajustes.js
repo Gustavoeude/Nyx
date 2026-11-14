@@ -62,8 +62,12 @@ function chooseWallpaperFile() {
           let data = canvas.toDataURL("image/jpeg", 0.72);
           if (data.length > 1800000) data = canvas.toDataURL("image/jpeg", 0.58);
           if (data.length > 2200000) throw new Error("A imagem ficou muito grande. Escolha outra.");
+          const previous = settings.wallpaper;
           settings.wallpaper = data;
-          saveSettings();
+          if (!saveSettings()) {
+            settings.wallpaper = previous;
+            throw new Error("Não foi possível salvar o papel de parede neste aparelho.");
+          }
           applyWallpaper();
           refreshSettingsPage();
           showToast("Papel de parede aplicado.");
