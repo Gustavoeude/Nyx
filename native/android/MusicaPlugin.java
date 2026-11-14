@@ -6,6 +6,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
@@ -22,11 +25,14 @@ import org.json.JSONArray;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import android.util.Base64;
 
@@ -45,6 +51,7 @@ import com.getcapacitor.annotation.PermissionCallback;
         @Permission(alias = "notifications", strings = {Manifest.permission.POST_NOTIFICATIONS})
 })
 public class MusicaPlugin extends Plugin {
+    private static final ExecutorService COVER_EXECUTOR = Executors.newFixedThreadPool(2);
 
     // ================= seleção nativa de pastas =================
     @PluginMethod
@@ -264,6 +271,66 @@ public class MusicaPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Não foi possível ler o arquivo: " + e.getMessage());
         }
+    }
+
+    /** Extrai a capa embutida sem bloquear a importação inicial da biblioteca. */
+    @PluginMethod
+    public void extractEmbeddedCover(PluginCall call) {
+        String value = call.getString("uri");
+        if (value == null || value.isEmpty()) {
+            call.reject("Arquivo inválido");
+            return;
+        }
+        Uri uri = Uri.parse(value);
+        COVER_EXECUTOR.execute(() -> {
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            Bitmap decoded = null;
+            Bitmap scaled = null;
+            try {
+                retriever.setDataSource(getContext(), uri);
+                byte[] artwork = retriever.getEmbeddedPicture();
+                JSObject response = new JSObject();
+                if (artwork == null || artwork.length == 0) {
+                    response.put("base64", "");
+                    call.resolve(response);
+                    return;
+                }
+
+                BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                BitmapFactory.decodeByteArray(artwork, 0, artwork.length, bounds);
+                int sample = 1;
+                while (Math.max(bounds.outWidth / sample, bounds.outHeight / sample) > 900) sample *= 2;
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inSampleSize = sample;
+                decoded = BitmapFactory.decodeByteArray(artwork, 0, artwork.length, options);
+                if (decoded == null) {
+                    response.put("base64", "");
+                    call.resolve(response);
+                    return;
+                }
+                int maxSide = Math.max(decoded.getWidth(), decoded.getHeight());
+                if (maxSide > 600) {
+                    float scale = 600f / maxSide;
+                    scaled = Bitmap.createScaledBitmap(decoded,
+                            Math.max(1, Math.round(decoded.getWidth() * scale)),
+                            Math.max(1, Math.round(decoded.getHeight() * scale)), true);
+                } else {
+                    scaled = decoded;
+                }
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                scaled.compress(Bitmap.CompressFormat.JPEG, 86, output);
+                response.put("base64", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP));
+                response.put("mimeType", "image/jpeg");
+                call.resolve(response);
+            } catch (Exception e) {
+                call.reject("Não foi possível extrair a capa: " + e.getMessage());
+            } finally {
+                if (scaled != null && scaled != decoded && !scaled.isRecycled()) scaled.recycle();
+                if (decoded != null && !decoded.isRecycled()) decoded.recycle();
+                try { retriever.release(); } catch (Exception ignored) {}
+            }
+        });
     }
 
     @Override

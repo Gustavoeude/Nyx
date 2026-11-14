@@ -8,6 +8,7 @@
    ========================================================== */
 let watchedSyncing = false;
 let watchedLastSync = 0;
+const safCoverJobs = new Map();
 
 function normalizeDirectoryList(value) {
   if (!Array.isArray(value)) return [];
@@ -77,6 +78,7 @@ function makeSafSong(item, folder) {
     sourceLastModified: Number(item.lastModified) || 0,
     sourceRelativePath: keys.relativePath,
     sourceMimeType: item.mimeType || "application/octet-stream",
+    sourceCoverChecked: false,
     favorite: false,
     file: null,
     url: null,
@@ -108,12 +110,80 @@ async function readSafSidecar(item) {
   }
 }
 
+async function loadSafCovers(entries) {
+  const unique = [];
+  for (const entry of entries) {
+    const key = String(entry.song.id);
+    if (entry.song.coverBlob || safCoverJobs.has(key)) continue;
+    const job = Promise.resolve();
+    safCoverJobs.set(key, job);
+    unique.push({ ...entry, key });
+  }
+  if (!unique.length) return;
+
+  let cursor = 0;
+  let completed = 0;
+  const pending = [];
+  let flushQueue = Promise.resolve();
+  const flush = () => {
+    const batch = pending.splice(0);
+    if (!batch.length) return flushQueue;
+    flushQueue = flushQueue.then(async () => {
+      await dbPutMany(batch.map(song => toRecord(song)));
+      refreshAll();
+    });
+    return flushQueue;
+  };
+
+  const worker = async () => {
+    while (cursor < unique.length) {
+      const entry = unique[cursor++];
+      const { song, item, key } = entry;
+      let extracted = false;
+      try {
+        if (MN && typeof MN.extractEmbeddedCover === "function") {
+          const result = await MN.extractEmbeddedCover({ uri: item.uri });
+          song.sourceCoverChecked = true;
+          if (result && result.base64) {
+            const binary = atob(result.base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const blob = new Blob([bytes], { type: result.mimeType || "image/jpeg" });
+            if (blob.type.startsWith("image/") && blob.size) {
+              song.coverBlob = blob;
+              if (song.cover) URL.revokeObjectURL(song.cover);
+              song.cover = URL.createObjectURL(blob);
+              pending.push(song);
+              extracted = true;
+              if (pending.length >= 4) await flush();
+            }
+          }
+        }
+      } catch (e) {
+        logErr("pasta:extract-cover", e);
+      }
+
+      if (extracted || song.sourceCoverChecked) {
+        if (!extracted) await dbPut(toRecord(song));
+      }
+      if (!extracted && typeof fetchOnlineCover === "function") void fetchOnlineCover(song);
+      completed++;
+      if (completed % 8 === 0) await flushQueue;
+      safCoverJobs.delete(key);
+    }
+  };
+
+  await Promise.all([worker(), worker()]);
+  await flush();
+}
+
 async function importSafListing(listing, folder, ignoredUris = []) {
   const items = Array.isArray(listing && listing.files) ? listing.files : [];
   const audio = items.filter(isSafAudio);
   const sidecars = items.filter(item => /\.lrc$/i.test(item.name || ""));
   const ignored = new Set(ignoredUris || []);
   const fresh = [];
+  const coverTargets = [];
 
   for (const item of audio) {
     if (!item.uri || ignored.has(item.uri)) continue;
@@ -128,18 +198,21 @@ async function importSafListing(listing, folder, ignoredUris = []) {
         duplicate.sourceLastModified = Number(item.lastModified) || duplicate.sourceLastModified || 0;
         duplicate.sourceTreeUri = folder.uri;
         duplicate.sourceRelativePath = keys.relativePath;
+        if (!duplicate.coverBlob && !duplicate.sourceCoverChecked) coverTargets.push({ song: duplicate, item });
       }
       continue;
     }
     const song = makeSafSong(item, folder);
     songs.push(song);
     fresh.push({ song, item });
+    coverTargets.push({ song, item });
   }
 
-  if (!fresh.length) return 0;
-  await dbPutMany(fresh.map(({ song }) => toRecord(song)));
-  refreshAll();
-  showToast("Adicionei " + fresh.length + (fresh.length === 1 ? " música" : " músicas"));
+  if (fresh.length) {
+    await dbPutMany(fresh.map(({ song }) => toRecord(song)));
+    refreshAll();
+    showToast("Adicionei " + fresh.length + (fresh.length === 1 ? " música" : " músicas"));
+  }
 
   // Sidecars são pequenos; lê-los sem bloquear a aparição da biblioteca.
   const sidecarByPath = new Map(sidecars.map(item => [normalizedSidecarPath(item), item]));
@@ -153,6 +226,7 @@ async function importSafListing(listing, folder, ignoredUris = []) {
     await dbPut(toRecord(song));
     if (song.id === currentId) renderLyrics(song);
   }));
+  void loadSafCovers(coverTargets).catch(e => logErr("pasta:cover-worker", e));
   return fresh.length;
 }
 
