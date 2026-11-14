@@ -36,6 +36,7 @@ const lyricsLookupStatus = new Map();
 const lyricsLookupInFlight = new Map();
 let lyricsLookupQueue = Promise.resolve();
 let lastLyricsLookupAt = 0;
+let lastLyricsHttpRequestAt = 0;
 
 function normalizeLyricsLookup(value) {
   return String(value || "")
@@ -50,9 +51,30 @@ function lyricsLookupTitle(song) {
   return String(song && song.name || "").replace(/^\s*\d{1,3}\s*[-._)\]]+\s*/, "").trim();
 }
 
+function lyricsLookupTitleVariants(song) {
+  const original = lyricsLookupTitle(song);
+  const variants = [original];
+  const withoutFeature = original
+    .replace(/\s*(?:\(|\[)?\s*(?:feat(?:uring)?|ft)\.?\s+.+?\s*(?:\)|\])?\s*$/i, "")
+    .trim();
+  const withoutEdition = withoutFeature
+    .replace(/\s*(?:[-–—]\s*)?(?:\(\s*|\[\s*)?(?:(?:\d{4}\s+)?(?:remaster(?:ed)?|radio edit|single version|album version|clean version|explicit version)|remaster(?:ed)?(?:\s+\d{4})?)(?:\s*\)|\])?\s*$/i, "")
+    .trim();
+  if (withoutFeature) variants.push(withoutFeature);
+  if (withoutEdition) variants.push(withoutEdition);
+  return [...new Set(variants.map(value => value.trim()).filter(Boolean))];
+}
+
 function lyricsLookupArtist(song) {
   const artist = normalizeLyricsLookup(song && song.artist);
   return !artist || ["arquivo local", "artista desconhecido", "unknown"].includes(artist) ? "" : artist;
+}
+
+function lyricsLookupArtistVariants(song) {
+  const original = String(song && song.artist || "").trim();
+  if (!lyricsLookupArtist(song)) return [];
+  const primary = original.split(/\s+(?:feat(?:uring)?|ft)\.?\s+|\s*[,&;]\s*|\s+x\s+/i)[0].trim();
+  return [...new Set([original, primary].filter(Boolean))];
 }
 
 function readLocalTrackDuration(song) {
@@ -83,27 +105,28 @@ function hasSyncedLyrics(song) {
   return !!(song && song.lyrics && parseLrc(song.lyrics).synced);
 }
 
-function chooseLyricsRecord(song, records, duration) {
-  const title = normalizeLyricsLookup(lyricsLookupTitle(song));
-  if (!title || !Array.isArray(records)) return null;
-  const artist = lyricsLookupArtist(song);
+function chooseLyricsRecord(song, records, duration, titleVariants = lyricsLookupTitleVariants(song), artistVariants = lyricsLookupArtistVariants(song)) {
+  const titles = new Set(titleVariants.map(normalizeLyricsLookup).filter(Boolean));
+  if (!titles.size || !Array.isArray(records)) return null;
+  const artistsToMatch = new Set(artistVariants.map(normalizeLyricsLookup).filter(Boolean));
   // Primeiro tenta título + artista exatos. Se o cadastro do artista variar,
   // mantém os resultados do título e só aceita quando não houver ambiguidade.
   const titleMatches = records.filter(record =>
-    normalizeLyricsLookup(record.trackName || record.name) === title
+    titles.has(normalizeLyricsLookup(record.trackName || record.name))
   );
   if (!titleMatches.length) return null;
 
-  let candidates = artist
-    ? titleMatches.filter(record => normalizeLyricsLookup(record.artistName) === artist)
+  let candidates = artistsToMatch.size
+    ? titleMatches.filter(record => artistsToMatch.has(normalizeLyricsLookup(record.artistName)))
     : titleMatches;
 
-  if (!candidates.length && artist) {
+  if (!candidates.length && artistsToMatch.size) {
     candidates = titleMatches.filter(record => {
       const recordArtist = normalizeLyricsLookup(record.artistName);
-      return recordArtist && (recordArtist.includes(artist) || artist.includes(recordArtist));
+      return recordArtist && [...artistsToMatch].some(artist => recordArtist.includes(artist) || artist.includes(recordArtist));
     });
   }
+  if (!candidates.length && artistsToMatch.size) return null;
   if (!candidates.length) candidates = titleMatches;
 
   const artists = new Set(candidates.map(record => normalizeLyricsLookup(record.artistName)).filter(Boolean));
@@ -146,6 +169,9 @@ function chooseLyricsRecord(song, records, duration) {
 }
 
 async function fetchLyricsJson(url) {
+  const wait = Math.max(0, 700 - (Date.now() - lastLyricsHttpRequestAt));
+  if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+  lastLyricsHttpRequestAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   let response;
@@ -175,17 +201,17 @@ async function fetchLyricsJson(url) {
   return response.json();
 }
 
-async function fetchLyricsRecord(song, force = false) {
-  const title = lyricsLookupTitle(song);
+async function fetchLyricsRecord(song) {
+  const titleVariants = lyricsLookupTitleVariants(song);
+  const artistVariants = lyricsLookupArtistVariants(song);
+  const title = titleVariants[0] || "";
   if (!title) return null;
   const artist = lyricsLookupArtist(song);
   const duration = await readLocalTrackDuration(song);
   let exactRecord = null;
-  let attemptedSignature = false;
 
   // O /api/get usa a assinatura completa e a duração para reduzir falsos matches.
   if (artist && Number.isFinite(duration) && duration > 0 && duration <= 3600) {
-    attemptedSignature = true;
     const signature = new URLSearchParams({
       track_name: title,
       artist_name: song.artist,
@@ -196,20 +222,33 @@ async function fetchLyricsRecord(song, force = false) {
     if (exactRecord && exactRecord.syncedLyrics) return exactRecord;
   }
 
-  if (attemptedSignature) await new Promise(resolve => setTimeout(resolve, 250));
   const params = new URLSearchParams({ track_name: title });
   if (artist) params.set("artist_name", song.artist);
   if (song.album) params.set("album_name", song.album);
   const records = await fetchLyricsJson(LRCLIB_SEARCH_URL + "?" + params.toString());
-  let selected = chooseLyricsRecord(song, records, duration);
-  if (force && (!selected || !selected.syncedLyrics)) {
-    await new Promise(resolve => setTimeout(resolve, 250));
-    const broad = new URLSearchParams({ q: [title, song.artist || ""].filter(Boolean).join(" ") });
-    const broaderRecords = await fetchLyricsJson(LRCLIB_SEARCH_URL + "?" + broad.toString());
-    const broaderSelected = chooseLyricsRecord(song, broaderRecords, duration);
-    if (broaderSelected && broaderSelected.syncedLyrics) selected = broaderSelected;
-    else if (!selected) selected = broaderSelected;
+  let selected = chooseLyricsRecord(song, records, duration, titleVariants, artistVariants);
+  if (selected && selected.syncedLyrics) return selected;
+
+  const alternateTitle = titleVariants[titleVariants.length - 1] || title;
+  const alternateArtist = artistVariants.length ? artistVariants[artistVariants.length - 1] : "";
+  const needsAlternate = normalizeLyricsLookup(alternateTitle) !== normalizeLyricsLookup(title) ||
+    normalizeLyricsLookup(alternateArtist) !== normalizeLyricsLookup(song.artist) || !!song.album;
+  if (needsAlternate) {
+    const alternate = new URLSearchParams({ track_name: alternateTitle });
+    if (alternateArtist) alternate.set("artist_name", alternateArtist);
+    const alternateRecords = await fetchLyricsJson(LRCLIB_SEARCH_URL + "?" + alternate.toString());
+    const alternateSelected = chooseLyricsRecord(song, alternateRecords, duration, titleVariants, artistVariants);
+    if (alternateSelected && alternateSelected.syncedLyrics) return alternateSelected;
+    if (!selected) selected = alternateSelected;
   }
+
+  // q busca em vários campos; usar só o título e validar artista/duração localmente
+  // evita misturar nomes de título e artista como se fossem um único campo.
+  const broad = new URLSearchParams({ q: alternateTitle });
+  const broadRecords = await fetchLyricsJson(LRCLIB_SEARCH_URL + "?" + broad.toString());
+  const broadSelected = chooseLyricsRecord(song, broadRecords, duration, titleVariants, artistVariants);
+  if (broadSelected && broadSelected.syncedLyrics) return broadSelected;
+  if (!selected) selected = broadSelected;
   if (selected && selected.syncedLyrics) return selected;
   return exactRecord || selected || null;
 }
