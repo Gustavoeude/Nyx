@@ -13,7 +13,7 @@ async function loadSongs() {
   records.sort((a, b) => a.id - b.id);
 
   for (const r of records) {
-    if (!r || !r.file) continue;
+    if (!r || (!r.file && !r.sourceUri)) continue;
     const song = makeSong(r);
     const genericArtist = !song.artist || ["arquivo local", "artista desconhecido", "unknown"].includes(String(song.artist).trim().toLowerCase());
     if (genericArtist) {

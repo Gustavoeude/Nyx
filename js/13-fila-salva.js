@@ -97,7 +97,8 @@ async function restoreSavedQueue() {
         audio._gotDuration = true;
       }
     } else {
-      audio.src = song.url;
+      if (song.url) audio.src = song.url;
+      else { audio.removeAttribute("src"); audio.load(); }
       const seekWhenReady = () => {
         audio.removeEventListener("loadedmetadata", seekWhenReady);
         try { if (pos > 0 && isFinite(audio.duration)) audio.currentTime = Math.min(pos, audio.duration); } catch (e) { logErr("fila-salva:posicao", e); }

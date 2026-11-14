@@ -223,6 +223,28 @@ async function dbPut(record) {
   });
 }
 
+async function dbPutMany(records) {
+  const db = await dbReady;
+  if (!db) return false;
+  return new Promise(resolve => {
+    let tx;
+    try {
+      tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      records.forEach(record => store.put(record));
+    } catch {
+      reportStorageIssue();
+      resolve(false);
+      return;
+    }
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = tx.onabort = () => {
+      reportStorageIssue();
+      resolve(false);
+    };
+  });
+}
+
 async function dbDelete(id) {
   const db = await dbReady;
   if (!db) return false;
@@ -280,7 +302,13 @@ function toRecord(song) {
     artist: song.artist,
     album: song.album || "",
     genre: song.genre || "",
-    sourceKey: song.sourceKey || fileIdentity(song.file),
+    sourceKey: song.sourceKey || (song.file ? fileIdentity(song.file) : song.sourceUri || ""),
+    sourceUri: song.sourceUri || "",
+    sourceTreeUri: song.sourceTreeUri || "",
+    sourceSize: Number(song.sourceSize) || 0,
+    sourceLastModified: Number(song.sourceLastModified) || 0,
+    sourceRelativePath: song.sourceRelativePath || "",
+    sourceMimeType: song.sourceMimeType || "",
     favorite: song.favorite,
     file: song.file,
     coverBlob: song.coverBlob || null,
@@ -312,10 +340,16 @@ function makeSong(r) {
     artist: r.artist,
     album: r.album || "",
     genre: r.genre || "",
-    sourceKey: r.sourceKey || fileIdentity(r.file),
+    sourceKey: r.sourceKey || (r.file ? fileIdentity(r.file) : r.sourceUri || ""),
+    sourceUri: r.sourceUri || "",
+    sourceTreeUri: r.sourceTreeUri || "",
+    sourceSize: Number(r.sourceSize) || 0,
+    sourceLastModified: Number(r.sourceLastModified) || 0,
+    sourceRelativePath: r.sourceRelativePath || "",
+    sourceMimeType: r.sourceMimeType || "",
     favorite: !!r.favorite,
     file: r.file,
-    url: URL.createObjectURL(r.file),
+    url: r.file ? URL.createObjectURL(r.file) : null,
     coverBlob: r.coverBlob || null,
     cover: r.coverBlob ? URL.createObjectURL(r.coverBlob) : null,
     playCount: r.playCount || 0,
@@ -329,4 +363,3 @@ function makeSong(r) {
     seed: null
   };
 }
-

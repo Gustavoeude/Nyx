@@ -591,24 +591,11 @@ async function importFolder() {
       const selected = await MN.pickFolder();
       if (!selected || selected.cancelled) return;
 
-      showToast("Lendo a pasta…");
+      showToast("Localizando músicas…");
       const listing = await MN.listFolderAudio({ uri: selected.uri });
       const listed = listing.files || [];
-      const audioItems = listed.filter(item => !lrcExt.test(item.name) &&
-        ((item.mimeType || "").startsWith("audio/") || audioExt.test(item.name))
-      );
-      const sidecarFiles = [];
-      for (const item of listed.filter(entry => lrcExt.test(entry.name))) {
-        try {
-          sidecarFiles.push(await readAndroidFolderFile(item));
-        } catch (e) {
-          logErr("importar:sidecar-android", e);
-        }
-      }
-      const sidecars = await readSidecarLyrics(sidecarFiles);
-      const origin = "“" + (selected.name || "pasta") + "”";
-      await processImportFiles(audioItems, origin, sidecars, readAndroidFolderFile, listed);
-      return { name: selected.name || "pasta", count: audioItems.length }; // resumo usado pela introdução
+      const count = await importSafListing(listing, selected);
+      return { name: selected.name || "pasta", count }; // resumo usado pela introdução
     } catch (e) {
       console.error("Falha ao importar pasta pelo Android:", e);
       showToast("Não foi possível ler essa pasta. Tente novamente ou escolha as músicas individualmente.");

@@ -79,7 +79,7 @@ async function deleteSong(song) {
     closeFullPlayer();
   }
 
-  URL.revokeObjectURL(song.url);
+  if (song.url) URL.revokeObjectURL(song.url);
   if (song.cover) URL.revokeObjectURL(song.cover);
 
   songs.splice(songs.indexOf(song), 1);

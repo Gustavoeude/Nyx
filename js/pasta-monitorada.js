@@ -46,29 +46,6 @@ function watchedItemPaths(item, folder) {
   };
 }
 
-async function readWatchedFile(item, folder) {
-  const parts = [];
-  let offset = 0;
-  let done = false;
-  while (!done) {
-    const chunk = await MN.readFolderFileChunk({ uri: item.uri, offset, chunkSize: 512 * 1024 });
-    const binary = atob(chunk.base64 || "");
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    if (bytes.length) parts.push(bytes);
-    offset = Number(chunk.nextOffset) || (offset + bytes.length);
-    done = !!chunk.done;
-    if (!bytes.length && !done) throw new Error("O Android não retornou dados do arquivo.");
-  }
-  const file = new File(parts, item.name, {
-    type: item.mimeType || "application/octet-stream",
-    lastModified: Number(item.lastModified) || 0
-  });
-  const paths = watchedItemPaths(item, folder);
-  try { Object.defineProperty(file, "sourcePath", { value: paths.sourcePath }); } catch (e) { logErr("pasta:read", e); }
-  return file;
-}
-
 function normalizedSidecarPath(item) {
   return String(item.relativePath || item.name || "")
     .replace(/\\/g, "/")
@@ -77,56 +54,126 @@ function normalizedSidecarPath(item) {
     .toLocaleLowerCase("pt-BR");
 }
 
+function isSafAudio(item) {
+  return !!item && !/\.lrc$/i.test(item.name || "") &&
+    (((item.mimeType || "").startsWith("audio/")) || audioExt.test(item.name || ""));
+}
+
+function makeSafSong(item, folder) {
+  const base = String(item.name || "Música").replace(/\.[^/.]+$/, "").trim() || "Música";
+  const parts = base.split(/\s+-\s+/, 2);
+  const hasArtist = parts.length === 2 && parts[0].trim() && parts[1].trim();
+  const keys = watchedItemPaths(item, folder);
+  return {
+    id: Date.now() + Math.random(),
+    name: hasArtist ? parts[1].trim() : base,
+    artist: hasArtist ? parts[0].trim() : "Arquivo local",
+    album: "",
+    genre: "",
+    sourceKey: "saf::" + item.uri,
+    sourceUri: item.uri,
+    sourceTreeUri: folder.uri,
+    sourceSize: Number(item.size) || 0,
+    sourceLastModified: Number(item.lastModified) || 0,
+    sourceRelativePath: keys.relativePath,
+    sourceMimeType: item.mimeType || "application/octet-stream",
+    favorite: false,
+    file: null,
+    url: null,
+    coverBlob: null,
+    cover: null,
+    playCount: 0,
+    lastPlayed: 0,
+    lyrics: "",
+    lyricsSource: "",
+    lyricsSourceId: null,
+    lyricsSearchAt: 0,
+    lyricsRetryAt: 0,
+    lyricsRetryReason: "",
+    seed: null
+  };
+}
+
+async function readSafSidecar(item) {
+  if (typeof MN.readFolderFile !== "function") return "";
+  try {
+    const result = await MN.readFolderFile({ uri: item.uri });
+    const binary = atob(result.base64 || "");
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "").trim();
+  } catch (e) {
+    logErr("pasta:sidecar", e);
+    return "";
+  }
+}
+
+async function importSafListing(listing, folder, ignoredUris = []) {
+  const items = Array.isArray(listing && listing.files) ? listing.files : [];
+  const audio = items.filter(isSafAudio);
+  const sidecars = items.filter(item => /\.lrc$/i.test(item.name || ""));
+  const ignored = new Set(ignoredUris || []);
+  const fresh = [];
+
+  for (const item of audio) {
+    if (!item.uri || ignored.has(item.uri)) continue;
+    const keys = watchedItemPaths(item, folder);
+    const duplicate = songs.find(song =>
+      song.sourceUri === item.uri || song.sourceKey === keys.sourceKey ||
+      (song.file && [fileIdentity(song.file), song.sourceKey].some(key => key === keys.sourceKey || key === keys.legacyKey))
+    );
+    if (duplicate) {
+      if (duplicate.sourceUri) {
+        duplicate.sourceSize = Number(item.size) || duplicate.sourceSize || 0;
+        duplicate.sourceLastModified = Number(item.lastModified) || duplicate.sourceLastModified || 0;
+        duplicate.sourceTreeUri = folder.uri;
+        duplicate.sourceRelativePath = keys.relativePath;
+      }
+      continue;
+    }
+    const song = makeSafSong(item, folder);
+    songs.push(song);
+    fresh.push({ song, item });
+  }
+
+  if (!fresh.length) return 0;
+  await dbPutMany(fresh.map(({ song }) => toRecord(song)));
+  refreshAll();
+  showToast("Adicionei " + fresh.length + (fresh.length === 1 ? " música" : " músicas"));
+
+  // Sidecars são pequenos; lê-los sem bloquear a aparição da biblioteca.
+  const sidecarByPath = new Map(sidecars.map(item => [normalizedSidecarPath(item), item]));
+  void Promise.all(fresh.map(async ({ song, item }) => {
+    const sidecar = sidecarByPath.get(normalizedSidecarPath(item));
+    if (!sidecar || song.lyrics) return;
+    const text = await readSafSidecar(sidecar);
+    if (!text || !parseLrc(text).lines.length || !songs.includes(song) || song.lyrics) return;
+    song.lyrics = text;
+    song.lyricsSource = "lrc";
+    await dbPut(toRecord(song));
+    if (song.id === currentId) renderLyrics(song);
+  }));
+  return fresh.length;
+}
+
 async function syncWatchedFolder(manual) {
   const folders = getWatchedFolders();
   if (!MN || typeof MN.listFolderAudio !== "function" || !folders.length || watchedSyncing) return;
   watchedSyncing = true;
   try {
     const ignoredUris = getIgnoredFolders().map(folder => folder.uri);
-    const known = new Set();
-    const legacyKnown = new Set();
-    for (const song of songs) {
-      const key = song.sourceKey || (song.file ? fileIdentity(song.file) : "");
-      if (key) {
-        known.add(key);
-        legacyKnown.add(key);
-      }
-    }
-
-    const files = [];
-    let discovered = 0;
+    let added = 0;
     for (const folder of folders) {
       const listing = await MN.listFolderAudio({ uri: folder.uri, ignoredUris });
-      const items = listing.files || [];
-      const audio = items.filter(item => !/\.lrc$/i.test(item.name || ""));
-      const fresh = audio.filter(item => {
-        const keys = watchedItemPaths(item, folder);
-        if (known.has(keys.sourceKey) || legacyKnown.has(keys.legacyKey)) return false;
-        known.add(keys.sourceKey);
-        return true;
-      });
-      if (!fresh.length) continue;
-
-      discovered += fresh.length;
-      const sidecarKeys = new Set(fresh.map(normalizedSidecarPath));
-      const sidecars = items.filter(item => /\.lrc$/i.test(item.name || "") && sidecarKeys.has(normalizedSidecarPath(item)));
-      for (const item of fresh.concat(sidecars)) {
-        try {
-          files.push(await readWatchedFile(item, folder));
-        } catch (e) {
-          logErr("pasta:read-file", e);
-        }
-      }
+      added += await importSafListing(listing, folder);
     }
 
-    if (!discovered || !files.some(file => !/\.lrc$/i.test(file.name || ""))) {
+    if (!added) {
       if (manual) showToast("Diretórios já estão atualizados");
       watchedLastSync = Date.now();
       return;
     }
 
-    showToast("Encontrei " + discovered + (discovered === 1 ? " música nova…" : " músicas novas…"));
-    await importFiles(files, "diretórios monitorados");
     watchedLastSync = Date.now();
   } catch (e) {
     logErr("pasta:sync", e);

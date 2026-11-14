@@ -431,16 +431,24 @@ public class MusicaPlaybackService extends MediaSessionService {
     // ---------- comandos (sempre chamados na thread principal via run) ----------
     private static MediaItem buildItem(org.json.JSONObject o) {
         String path = o.optString("path", "");
-        File f = new File(path);
-        if (!f.isFile() || !f.canRead()) return null;
+        String sourceUri = o.optString("uri", "");
+        Uri mediaUri;
+        if (!sourceUri.isEmpty()) {
+            mediaUri = Uri.parse(sourceUri);
+            if (!"content".equalsIgnoreCase(mediaUri.getScheme())) return null;
+        } else {
+            File f = new File(path);
+            if (!f.isFile() || !f.canRead()) return null;
+            mediaUri = Uri.fromFile(f);
+        }
         MediaMetadata.Builder md = new MediaMetadata.Builder()
                 .setTitle(o.optString("title", "Música"))
                 .setArtist(o.optString("artist", ""));
         String cover = o.optString("cover", "");
         if (!cover.isEmpty() && new File(cover).isFile()) md.setArtworkUri(Uri.fromFile(new File(cover)));
         return new MediaItem.Builder()
-                .setMediaId(o.optString("id", path))
-                .setUri(Uri.fromFile(f))
+                .setMediaId(o.optString("id", sourceUri.isEmpty() ? path : sourceUri))
+                .setUri(mediaUri)
                 .setMediaMetadata(md.build())
                 .build();
     }

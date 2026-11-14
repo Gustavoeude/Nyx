@@ -134,7 +134,8 @@ function playSong(id, context, back) {
 
   if (nativeMode) nativeStart(song, true);
   else {
-    audio.src = song.url;
+    if (song.url) audio.src = song.url;
+    else { audio.removeAttribute("src"); audio.load(); }
     playAudio();
   }
 
@@ -431,6 +432,7 @@ if (MN && MN.addListener) {
 /* ----- Player nativo: copiar arquivos, fila e eventos ----- */
 const nativeFiles = new Map(); // id -> { path, size }
 const nativeCopyJobs = new Map();
+const safWebLoadJobs = new Map();
 const nativeCovers = new Map(); // id -> { url, path }
 const NATIVE_CACHE_BYTES = 2e9; // limite de espaço das músicas copiadas
 const NATIVE_LOOKAHEAD = 30; // quantas próximas músicas ficam na fila do player nativo
@@ -455,6 +457,45 @@ function blobToB64(blob) {
 }
 
 // copia a música para a pasta privada do app (só na primeira vez; depois reaproveita)
+async function ensureSafWebFile(song) {
+  if (song.url) return song.url;
+  const key = String(song.id);
+  if (safWebLoadJobs.has(key)) return safWebLoadJobs.get(key);
+  if (!MN || !song.sourceUri) throw new Error("A fonte SAF não está disponível.");
+  const job = (async () => {
+    const parts = [];
+    let offset = 0;
+    let done = false;
+    if (typeof MN.readFolderFileChunk === "function") {
+      while (!done) {
+        const chunk = await MN.readFolderFileChunk({ uri: song.sourceUri, offset, chunkSize: 1024 * 1024 });
+        const binary = atob(chunk.base64 || "");
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        if (bytes.length) parts.push(bytes);
+        offset = Number(chunk.nextOffset) || (offset + bytes.length);
+        done = !!chunk.done;
+        if (!bytes.length && !done) throw new Error("O Android não retornou dados do arquivo.");
+      }
+    } else if (typeof MN.readFolderFile === "function") {
+      const result = await MN.readFolderFile({ uri: song.sourceUri });
+      const binary = atob(result.base64 || "");
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      parts.push(bytes);
+    } else throw new Error("O Android não oferece leitura de arquivos SAF.");
+    const pathName = song.sourceRelativePath || song.name || "musica.audio";
+    const fileName = pathName.split("/").pop() || "musica.audio";
+    const file = new File(parts, fileName, { type: song.sourceMimeType || "application/octet-stream", lastModified: song.sourceLastModified || Date.now() });
+    song.file = file;
+    song.url = URL.createObjectURL(file);
+    await dbPut(toRecord(song));
+    return song.url;
+  })().finally(() => safWebLoadJobs.delete(key));
+  safWebLoadJobs.set(key, job);
+  return job;
+}
+
 function nativeEnsureFile(song) {
   const key = String(song.id);
   const known = nativeFiles.get(key);
@@ -501,10 +542,12 @@ async function nativeEnsureCover(song) {
 }
 
 async function nativeItem(song) {
-  const info = await nativeEnsureFile(song);
+  const info = song.sourceUri
+    ? { uri: song.sourceUri }
+    : await nativeEnsureFile(song);
   let cover = "";
   try { cover = await nativeEnsureCover(song); } catch (e) { logErr("reproducao:473", e); }
-  return { id: String(song.id), path: info.path, title: song.name || "Música", artist: song.artist || "", cover };
+  return { id: String(song.id), path: info.path || "", uri: info.uri || "", title: song.name || "Música", artist: song.artist || "", cover };
 }
 
 async function nativeStart(song, autoplay, startAt) {
@@ -586,11 +629,11 @@ async function nativePushUpcoming() {
     } catch (e) { logErr("reproducao:getQueue", e); }
     if (currentId !== startId) return;
 
-    let wanted = planned.filter(id => { const s = getSong(id); return s && s.file; });
+    let wanted = planned.filter(id => { const s = getSong(id); return s && (s.file || s.sourceUri); });
     if (shuffle && have.length) {
       // no aleatório, mantém a ordem já enviada e só completa com novas sorteadas
       const byId = new Map(songs.map(s => [String(s.id), s]));
-      const kept = have.map(h => byId.get(h)).filter(s => s && s.file && s.id !== currentId).map(s => s.id);
+      const kept = have.map(h => byId.get(h)).filter(s => s && (s.file || s.sourceUri) && s.id !== currentId).map(s => s.id);
       const taken = new Set(kept.map(String));
       const extra = wanted.filter(id => !taken.has(String(id)));
       wanted = kept.concat(extra).slice(0, NATIVE_LOOKAHEAD);
@@ -715,6 +758,20 @@ function updatePositionState() {
 }
 
 function playAudio() {
+  const song = current();
+  if (!nativeMode && song && song.sourceUri && !song.url) {
+    const id = song.id;
+    showToast("Preparando a música para reprodução…");
+    ensureSafWebFile(song).then(url => {
+      if (currentId !== id) return;
+      audio.src = url;
+      return audio.play();
+    }).catch(error => {
+      console.error(error);
+      if (currentId === id) notifyPlaybackProblem("Não consegui abrir esta pasta. Verifique o acesso ao armazenamento.");
+    });
+    return;
+  }
   let result;
   try { result = audio.play(); }
   catch (error) { notifyPlayRejected(error); return; }
