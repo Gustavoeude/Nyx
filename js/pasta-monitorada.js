@@ -79,6 +79,7 @@ function makeSafSong(item, folder) {
     sourceRelativePath: keys.relativePath,
     sourceMimeType: item.mimeType || "application/octet-stream",
     sourceCoverChecked: false,
+    sourceMetadataChecked: false,
     favorite: false,
     file: null,
     url: null,
@@ -110,11 +111,11 @@ async function readSafSidecar(item) {
   }
 }
 
-async function loadSafCovers(entries) {
+async function loadSafMetadata(entries) {
   const unique = [];
   for (const entry of entries) {
     const key = String(entry.song.id);
-    if (entry.song.coverBlob || safCoverJobs.has(key)) continue;
+    if ((entry.song.sourceMetadataChecked && (entry.song.coverBlob || entry.song.sourceCoverChecked)) || safCoverJobs.has(key)) continue;
     const job = Promise.resolve();
     safCoverJobs.set(key, job);
     unique.push({ ...entry, key });
@@ -139,34 +140,43 @@ async function loadSafCovers(entries) {
     while (cursor < unique.length) {
       const entry = unique[cursor++];
       const { song, item, key } = entry;
-      let extracted = false;
+      let metadataRead = false;
       try {
         if (MN && typeof MN.extractEmbeddedCover === "function") {
           const result = await MN.extractEmbeddedCover({ uri: item.uri });
+          metadataRead = true;
           song.sourceCoverChecked = true;
+          song.sourceMetadataChecked = true;
+          const title = String(result && result.title || "").trim();
+          const artist = String(result && (result.artist || result.albumArtist) || "").trim();
+          const album = String(result && result.album || "").trim();
+          const genre = String(result && result.genre || "").trim();
+          if (title) song.name = title;
+          if (artist) song.artist = artist;
+          if (album) song.album = album;
+          if (genre) song.genre = typeof cleanGenre === "function" ? cleanGenre(genre) : genre;
           if (result && result.base64) {
             const binary = atob(result.base64);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             const blob = new Blob([bytes], { type: result.mimeType || "image/jpeg" });
-            if (blob.type.startsWith("image/") && blob.size) {
+            if (!song.coverBlob && blob.type.startsWith("image/") && blob.size) {
               song.coverBlob = blob;
               if (song.cover) URL.revokeObjectURL(song.cover);
               song.cover = URL.createObjectURL(blob);
-              pending.push(song);
-              extracted = true;
-              if (pending.length >= 4) await flush();
             }
           }
         }
       } catch (e) {
-        logErr("pasta:extract-cover", e);
+        logErr("pasta:extract-metadata", e);
       }
 
-      if (extracted || song.sourceCoverChecked) {
-        if (!extracted) await dbPut(toRecord(song));
+      if (metadataRead) {
+        pending.push(song);
+        if (pending.length >= 4) await flush();
       }
-      if (!extracted && typeof fetchOnlineCover === "function") void fetchOnlineCover(song);
+      if (!song.coverBlob && typeof fetchOnlineCover === "function") void fetchOnlineCover(song);
+      if (!song.lyrics && typeof requestOnlineLyrics === "function") void requestOnlineLyrics(song);
       completed++;
       if (completed % 8 === 0) await flushQueue;
       safCoverJobs.delete(key);
@@ -198,7 +208,7 @@ async function importSafListing(listing, folder, ignoredUris = []) {
         duplicate.sourceLastModified = Number(item.lastModified) || duplicate.sourceLastModified || 0;
         duplicate.sourceTreeUri = folder.uri;
         duplicate.sourceRelativePath = keys.relativePath;
-        if (!duplicate.coverBlob && !duplicate.sourceCoverChecked) coverTargets.push({ song: duplicate, item });
+        if (!duplicate.sourceMetadataChecked || (!duplicate.coverBlob && !duplicate.sourceCoverChecked)) coverTargets.push({ song: duplicate, item });
       }
       continue;
     }
@@ -216,7 +226,7 @@ async function importSafListing(listing, folder, ignoredUris = []) {
 
   // Sidecars são pequenos; lê-los sem bloquear a aparição da biblioteca.
   const sidecarByPath = new Map(sidecars.map(item => [normalizedSidecarPath(item), item]));
-  void Promise.all(fresh.map(async ({ song, item }) => {
+  const sidecarTask = Promise.all(fresh.map(async ({ song, item }) => {
     const sidecar = sidecarByPath.get(normalizedSidecarPath(item));
     if (!sidecar || song.lyrics) return;
     const text = await readSafSidecar(sidecar);
@@ -226,7 +236,7 @@ async function importSafListing(listing, folder, ignoredUris = []) {
     await dbPut(toRecord(song));
     if (song.id === currentId) renderLyrics(song);
   }));
-  void loadSafCovers(coverTargets).catch(e => logErr("pasta:cover-worker", e));
+  void sidecarTask.then(() => loadSafMetadata(coverTargets)).catch(e => logErr("pasta:metadata-worker", e));
   return fresh.length;
 }
 

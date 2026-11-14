@@ -290,6 +290,11 @@ public class MusicaPlugin extends Plugin {
                 retriever.setDataSource(getContext(), uri);
                 byte[] artwork = retriever.getEmbeddedPicture();
                 JSObject response = new JSObject();
+                putMetadata(response, "title", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE));
+                putMetadata(response, "artist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST));
+                putMetadata(response, "albumArtist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST));
+                putMetadata(response, "album", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM));
+                putMetadata(response, "genre", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE));
                 if (artwork == null || artwork.length == 0) {
                     response.put("base64", "");
                     call.resolve(response);
@@ -331,6 +336,10 @@ public class MusicaPlugin extends Plugin {
                 try { retriever.release(); } catch (Exception ignored) {}
             }
         });
+    }
+
+    private void putMetadata(JSObject target, String key, String value) {
+        if (value != null && !value.trim().isEmpty()) target.put(key, value.trim());
     }
 
     @Override
