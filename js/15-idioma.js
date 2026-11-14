@@ -259,7 +259,9 @@ const LANG_DICT = {
   "Desativar otimização": ["Disable optimization", "Desactivar optimización"], "Otimização já estava desativada": ["Optimization was already disabled", "La optimización ya estaba desactivada"],
   "Confirme na janela do Android": ["Confirm in the Android window", "Confirma en la ventana de Android"], "Pedido enviado": ["Request sent", "Solicitud enviada"],
   "Bem-vindo ao Nyx": ["Welcome to Nyx", "Bienvenido a Nyx"], "Configuração inicial do Nyx": ["Nyx initial setup", "Configuración inicial de Nyx"],
-  /* tutorial: textos que faltavam */
+  /* tutorial e letras: textos que faltavam */
+  "A do seu Android": ["The one from your Android", "La de tu Android"],
+  "A busca envia apenas título, artista e álbum ao LRCLIB; o arquivo de áudio não é enviado.": ["The search only sends title, artist and album to LRCLIB; the audio file is never sent.", "La búsqueda solo envía título, artista y álbum a LRCLIB; el archivo de audio no se envía."],
   "Bateria": ["Battery", "Batería"],
   "Aguardando…": ["Waiting…", "Esperando…"], "Importando…": ["Importing…", "Importando…"],
   "Sua música": ["Your music", "Tu música"], "Artista · Nyx": ["Artist · Nyx", "Artista · Nyx"],
@@ -273,6 +275,7 @@ const LANG_GREET = {
   "BOA TARDE": ["GOOD AFTERNOON", "BUENAS TARDES"], "BOA NOITE": ["GOOD EVENING", "BUENAS NOCHES"]
 };
 const LANG_RULES = [
+  [/^(Adicionar|Remover) (.+) dos favoritos$/, (a, x) => (a === "Adicionar" ? "Add " + x + " to favorites" : "Remove " + x + " from favorites"), (a, x) => (a === "Adicionar" ? "Añadir " + x + " a favoritas" : "Quitar " + x + " de favoritas")],
   [/^(\d+) de (\d+)$/, (n, t) => n + " of " + t, (n, t) => n + " de " + t],
   [/^(\d+) vez(?:es)?$/, (n) => n + (n === "1" ? " play" : " plays"), (n) => n + (n === "1" ? " vez" : " veces")],
   [/^(\d+) músicas? na coleção\.$/, (n) => n + (n === "1" ? " song in the collection." : " songs in the collection."), (n) => n + (n === "1" ? " canción en la colección." : " canciones en la colección.")],
@@ -298,7 +301,7 @@ const LANG_RULES = [
   [/^Remover (.+)$/, (x) => "Remove " + x, (x) => "Quitar " + x],
   [/^Tocar (.+)$/, (x) => "Play " + x, (x) => "Reproducir " + x],
   [/^Abrir player completo: (.+)$/, (x) => "Open full player: " + x, (x) => "Abrir reproductor completo: " + x],
-  [/^Cor atual: (.+)$/, (x) => "Current color: " + x, (x) => "Color actual: " + x]
+  [/^Cor atual: (.+)$/, (x) => "Current color: " + translateString(x, "en"), (x) => "Color actual: " + translateString(x, "es")]
 ];
 
 let currentLang = "pt";
@@ -351,7 +354,7 @@ function translateString(str, lang) {
   return out === null ? str : m[1] + out + m[3];
 }
 
-const LANG_SKIP = "script, style, textarea, input, .material-symbols-rounded, [data-notr], #fpLyrics, #fpTitle, #fpArtist, .lyric-line";
+const LANG_SKIP = "script, style, textarea, input, .material-symbols-rounded, [data-notr], .lrc-line, #fpTitle, #fpArtist, .lyric-line";
 const LANG_ATTRS = ["aria-label", "placeholder", "title"];
 
 function langSkipped(node) {
