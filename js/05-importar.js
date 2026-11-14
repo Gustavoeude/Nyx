@@ -449,39 +449,71 @@ async function readSidecarLyrics(files) {
 }
 
 // Recebe músicas e, se estiverem disponíveis no mesmo lote/pasta, associa arquivos LRC homônimos.
+async function processImportFiles(files, origem, sidecars, readFile = async file => file, selectedFiles = files) {
+  const total = files.length;
+  const refreshEvery = Math.max(6, Math.ceil(total / 12));
+  let added = 0;
+  let notStored = 0;
+  let lyricsAdded = 0;
+  let failed = 0;
+
+  for (let index = 0; index < total; index++) {
+    try {
+      const file = await readFile(files[index]);
+      const result = await addFile(file, sidecars.get(lyricsMatchKey(file)) || "");
+      if (result.added) {
+        added++;
+        if (!result.stored) notStored++;
+      }
+      if (result.lyricsAdded) lyricsAdded++;
+    } catch (error) {
+      failed++;
+      logErr("importar:process", error);
+    }
+
+    const completed = index + 1;
+    if (completed < total && (completed === 1 || completed % refreshEvery === 0)) {
+      refreshAll();
+      showToast("Importando " + completed + " de " + total + " músicas…");
+    }
+  }
+
+  refreshAll();
+
+  if (total === 0) {
+    showToast(selectedFiles.some(f => lrcExt.test(f.name))
+      ? "Selecione também a música correspondente para associar a letra."
+      : origem ? "Nenhuma música encontrada nessa pasta" : "Nenhum áudio selecionado");
+  } else if (added === 0 && lyricsAdded === 0) {
+    showToast(failed
+      ? "Não foi possível ler " + failed + (failed === 1 ? " música." : " músicas.")
+      : "Essas músicas já estão na biblioteca");
+  } else if (added === 0) {
+    let message = lyricsAdded + (lyricsAdded === 1 ? " letra associada à música existente" : " letras associadas às músicas existentes");
+    if (failed) message += " · " + failed + " não puderam ser lidas";
+    showToast(message);
+  }
+  else if (notStored) {
+    let message = added + " música(s) adicionada(s) só nesta sessão; não foi possível salvá-las.";
+    if (failed) message += " " + failed + " não puderam ser lidas.";
+    showToast(message);
+  }
+  else {
+    let message = added + (added === 1 ? " música adicionada" : " músicas adicionadas") + (origem ? " de " + origem : "");
+    if (lyricsAdded) message += " · " + lyricsAdded + (lyricsAdded === 1 ? " letra encontrada" : " letras encontradas");
+    if (failed) message += " · " + failed + " não puderam ser lidas";
+    showToast(message);
+  }
+  return { added, notStored, lyricsAdded, failed, total };
+}
+
 async function importFiles(list, origem) {
   const selectedFiles = Array.from(list || []);
   const files = selectedFiles.filter(
     f => (f.type || "").startsWith("audio/") || audioExt.test(f.name)
   );
   const sidecars = await readSidecarLyrics(selectedFiles);
-
-  let added = 0;
-  let notStored = 0;
-  let lyricsAdded = 0;
-  for (const file of files) {
-    const result = await addFile(file, sidecars.get(lyricsMatchKey(file)) || "");
-    if (result.added) {
-      added++;
-      if (!result.stored) notStored++;
-    }
-    if (result.lyricsAdded) lyricsAdded++;
-  }
-
-  refreshAll();
-
-  if (files.length === 0) {
-    showToast(selectedFiles.some(f => lrcExt.test(f.name))
-      ? "Selecione também a música correspondente para associar a letra."
-      : origem ? "Nenhuma música encontrada nessa pasta" : "Nenhum áudio selecionado");
-  } else if (added === 0 && lyricsAdded === 0) showToast("Essas músicas já estão na biblioteca");
-  else if (added === 0) showToast(lyricsAdded + (lyricsAdded === 1 ? " letra associada à música existente" : " letras associadas às músicas existentes"));
-  else if (notStored) showToast(added + " música(s) adicionada(s) só nesta sessão; não foi possível salvá-las.");
-  else {
-    let message = added + (added === 1 ? " música adicionada" : " músicas adicionadas") + (origem ? " de " + origem : "");
-    if (lyricsAdded) message += " · " + lyricsAdded + (lyricsAdded === 1 ? " letra encontrada" : " letras encontradas");
-    showToast(message);
-  }
+  return processImportFiles(files, origem, sidecars, async file => file, selectedFiles);
 }
 
 fileInput.addEventListener("change", () => {
@@ -510,6 +542,48 @@ async function collectFromDirectory(dirHandle, out, prefix = "") {
   }
 }
 
+async function readAndroidFolderFile(item) {
+  const fileOptions = {
+    type: item.mimeType || "application/octet-stream",
+    lastModified: Date.now()
+  };
+  let file;
+
+  if (typeof MN.readFolderFileChunk === "function") {
+    // Blocos de 1 MiB reduzem chamadas à ponte; o plugin limita o máximo a 1 MiB.
+    const parts = [];
+    let offset = 0;
+    let done = false;
+    while (!done) {
+      const chunk = await MN.readFolderFileChunk({
+        uri: item.uri,
+        offset,
+        chunkSize: 1024 * 1024
+      });
+      const binary = atob(chunk.base64 || "");
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      if (bytes.length) parts.push(bytes);
+      offset = Number(chunk.nextOffset) || (offset + bytes.length);
+      done = !!chunk.done;
+      if (!bytes.length && !done) throw new Error("O Android não retornou dados do arquivo.");
+    }
+    file = new File(parts, item.name, fileOptions);
+  } else {
+    // Compatibilidade com APKs que ainda não possuem a leitura em blocos.
+    const result = await MN.readFolderFile({ uri: item.uri });
+    const binary = atob(result.base64 || "");
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    file = new File([bytes], item.name, fileOptions);
+  }
+
+  try {
+    Object.defineProperty(file, "sourcePath", { value: item.relativePath || item.name });
+  } catch (e) { logErr("importar:read-android", e); }
+  return file;
+}
+
 async function importFolder() {
   // No APK, usa o seletor nativo de pastas do Android (Storage Access Framework).
   if (MN && typeof MN.pickFolder === "function") {
@@ -519,52 +593,22 @@ async function importFolder() {
 
       showToast("Lendo a pasta…");
       const listing = await MN.listFolderAudio({ uri: selected.uri });
-      const found = [];
-
-      for (const item of (listing.files || [])) {
-        let file;
-        if (typeof MN.readFolderFileChunk === "function") {
-          // Blocos pequenos evitam manter uma Base64 enorme na memória do WebView.
-          const parts = [];
-          let offset = 0;
-          let done = false;
-          while (!done) {
-            const chunk = await MN.readFolderFileChunk({
-              uri: item.uri,
-              offset,
-              chunkSize: 512 * 1024
-            });
-            const binary = atob(chunk.base64 || "");
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            if (bytes.length) parts.push(bytes);
-            offset = Number(chunk.nextOffset) || (offset + bytes.length);
-            done = !!chunk.done;
-            if (!bytes.length && !done) throw new Error("O Android não retornou dados do arquivo.");
-          }
-          file = new File(parts, item.name, {
-            type: item.mimeType || "application/octet-stream",
-            lastModified: Date.now()
-          });
-        } else {
-          // Compatibilidade com APKs que ainda não possuem a leitura em blocos.
-          const result = await MN.readFolderFile({ uri: item.uri });
-          const binary = atob(result.base64 || "");
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          file = new File([bytes], item.name, {
-            type: item.mimeType || "application/octet-stream",
-            lastModified: Date.now()
-          });
-        }
+      const listed = listing.files || [];
+      const audioItems = listed.filter(item => !lrcExt.test(item.name) &&
+        ((item.mimeType || "").startsWith("audio/") || audioExt.test(item.name))
+      );
+      const sidecarFiles = [];
+      for (const item of listed.filter(entry => lrcExt.test(entry.name))) {
         try {
-          Object.defineProperty(file, "sourcePath", { value: item.relativePath || item.name });
-        } catch (e) { logErr("importar:523", e); }
-        found.push(file);
+          sidecarFiles.push(await readAndroidFolderFile(item));
+        } catch (e) {
+          logErr("importar:sidecar-android", e);
+        }
       }
-
-      await importFiles(found, "“" + (selected.name || "pasta") + "”");
-      return { name: selected.name || "pasta", count: found.length }; // resumo usado pela introdução
+      const sidecars = await readSidecarLyrics(sidecarFiles);
+      const origin = "“" + (selected.name || "pasta") + "”";
+      await processImportFiles(audioItems, origin, sidecars, readAndroidFolderFile, listed);
+      return { name: selected.name || "pasta", count: audioItems.length }; // resumo usado pela introdução
     } catch (e) {
       console.error("Falha ao importar pasta pelo Android:", e);
       showToast("Não foi possível ler essa pasta. Tente novamente ou escolha as músicas individualmente.");
