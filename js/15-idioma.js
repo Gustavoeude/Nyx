@@ -258,7 +258,13 @@ const LANG_DICT = {
   "Notificações ativadas": ["Notifications enabled", "Notificaciones activadas"], "Permissão não concedida": ["Permission not granted", "Permiso no concedido"],
   "Desativar otimização": ["Disable optimization", "Desactivar optimización"], "Otimização já estava desativada": ["Optimization was already disabled", "La optimización ya estaba desactivada"],
   "Confirme na janela do Android": ["Confirm in the Android window", "Confirma en la ventana de Android"], "Pedido enviado": ["Request sent", "Solicitud enviada"],
-  "Bem-vindo ao Nyx": ["Welcome to Nyx", "Bienvenido a Nyx"], "Configuração inicial do Nyx": ["Nyx initial setup", "Configuración inicial de Nyx"]
+  "Bem-vindo ao Nyx": ["Welcome to Nyx", "Bienvenido a Nyx"], "Configuração inicial do Nyx": ["Nyx initial setup", "Configuración inicial de Nyx"],
+  /* tutorial: textos que faltavam */
+  "Bateria": ["Battery", "Batería"],
+  "Aguardando…": ["Waiting…", "Esperando…"], "Importando…": ["Importing…", "Importando…"],
+  "Sua música": ["Your music", "Tu música"], "Artista · Nyx": ["Artist · Nyx", "Artista · Nyx"],
+  "Escolha a pasta onde ficam suas músicas. O Nyx guarda essa pasta em Ajustes > Biblioteca e importa tudo dela.": ["Choose the folder where your music is. Nyx remembers it in Settings > Library and imports everything from it.", "Elige la carpeta donde está tu música. Nyx la guarda en Ajustes > Biblioteca e importa todo de ella."],
+  "Escolha a pasta principal. O Nyx encontra as subpastas sozinho. Você pode adicionar mais de uma pasta e mudar isso depois em Ajustes.": ["Choose the main folder. Nyx finds the subfolders by itself. You can add more than one folder and change this later in Settings.", "Elige la carpeta principal. Nyx encuentra las subcarpetas solo. Puedes añadir más de una carpeta y cambiarlo después en Ajustes."]
 };
 
 // regras para textos com números e plurais
@@ -267,6 +273,7 @@ const LANG_GREET = {
   "BOA TARDE": ["GOOD AFTERNOON", "BUENAS TARDES"], "BOA NOITE": ["GOOD EVENING", "BUENAS NOCHES"]
 };
 const LANG_RULES = [
+  [/^(\d+) de (\d+)$/, (n, t) => n + " of " + t, (n, t) => n + " de " + t],
   [/^(\d+) vez(?:es)?$/, (n) => n + (n === "1" ? " play" : " plays"), (n) => n + (n === "1" ? " vez" : " veces")],
   [/^(\d+) músicas? na coleção\.$/, (n) => n + (n === "1" ? " song in the collection." : " songs in the collection."), (n) => n + (n === "1" ? " canción en la colección." : " canciones en la colección.")],
   [/^Fonte “(.+)” adicionada$/, (x) => "Font “" + x + "” added", (x) => "Fuente “" + x + "” añadida"],
