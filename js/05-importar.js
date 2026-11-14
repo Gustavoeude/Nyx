@@ -544,7 +544,7 @@ async function importFolder() {
           }
           file = new File(parts, item.name, {
             type: item.mimeType || "application/octet-stream",
-            lastModified: Date.now()
+            lastModified: Number(item.lastModified) || 0
           });
         } else {
           // Compatibilidade com APKs que ainda não possuem a leitura em blocos.
@@ -554,7 +554,7 @@ async function importFolder() {
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           file = new File([bytes], item.name, {
             type: item.mimeType || "application/octet-stream",
-            lastModified: Date.now()
+            lastModified: Number(item.lastModified) || 0
           });
         }
         try {
