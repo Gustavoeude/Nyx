@@ -22,14 +22,19 @@ on:
       - "native/**"
       - ".github/workflows/android-apk.yml"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Baixar código
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configurar Node.js
         uses: actions/setup-node@v4
@@ -76,55 +81,80 @@ jobs:
       - name: Sincronizar projeto Android
         run: npx cap sync android
 
-      - name: Compilar o APK
-        env:
-          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
-          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
-        working-directory: android
-        run: |
-          if [ -n "$KS_PASS" ] && [ -n "$KS_B64" ]; then
-            ./gradlew assembleRelease
-          else
-            echo "Sem KEYSTORE_PASSWORD/KEYSTORE_BASE64: compilando APK de teste (debug)."
-            ./gradlew assembleDebug
-          fi
-
-      - name: Assinar o APK
-        env:
-          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
-          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+      - name: Compilar APK sem credenciais de assinatura
         run: |
           mkdir -p out
-          if [ -z "$KS_PASS" ] || [ -z "$KS_B64" ]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            (cd android && ./gradlew assembleRelease)
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk out/Musica-unsigned.apk
+          else
+            (cd android && ./gradlew assembleDebug)
             cp android/app/build/outputs/apk/debug/app-debug.apk out/Musica-debug.apk
-            exit 0
           fi
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/musica.jks"
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
-          "$BT/apksigner" sign --ks "$RUNNER_TEMP/musica.jks" --ks-key-alias musica \
-            --ks-pass env:KS_PASS --key-pass env:KS_PASS --out out/Musica.apk "$RUNNER_TEMP/aligned.apk"
-          "$BT/apksigner" verify --print-certs out/Musica.apk | head -3
-          rm -f "$RUNNER_TEMP/musica.jks"
 
-      - name: Disponibilizar o APK
+      - name: Disponibilizar APK de build
         uses: actions/upload-artifact@v4
         with:
-          name: Musica-apk
+          name: nyx-apk
           path: out/*.apk
           if-no-files-found: error
 
-      - name: Publicar a Release (só quando a tag começa com "v")
-        if: startsWith(github.ref, 'refs/tags/v')
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Baixar APK unsigned
+        uses: actions/download-artifact@v4
+        with:
+          name: nyx-apk
+          path: out
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android Build Tools
+        run: sdkmanager "build-tools;35.0.0"
+
+      - name: Assinar e verificar APK
+        env:
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KS_PASS" ] || [ -z "$KS_B64" ]; then
+            echo "Faltam KEYSTORE_PASSWORD/KEYSTORE_BASE64; não é possível publicar uma release assinada."
+            exit 1
+          fi
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/nyx.jks"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/zipalign" -p -f 4 out/Musica-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/nyx.jks" --ks-key-alias musica \
+            --ks-pass env:KS_PASS --key-pass env:KS_PASS --out out/Nyx.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs out/Nyx.apk | head -3
+          rm -f "$RUNNER_TEMP/nyx.jks"
+
+      - name: Disponibilizar APK assinado
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nyx-release-apk
+          path: out/Nyx.apk
+          if-no-files-found: error
+
+      - name: Publicar a Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ ! -f out/Musica.apk ]; then
-            echo "APK assinado não encontrado (faltam KEYSTORE_PASSWORD/KEYSTORE_BASE64). Release não publicada."
-            exit 1
-          fi
-          cp out/Musica.apk out/Nyx.apk
           VERSAO="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" out/Nyx.apk \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Nyx $VERSAO" \
             --generate-notes

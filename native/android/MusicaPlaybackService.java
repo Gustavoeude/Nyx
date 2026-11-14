@@ -253,6 +253,9 @@ public class MusicaPlaybackService extends MediaSessionService {
         b.setCallback(new MediaSession.Callback() {
             @Override
             public MediaSession.ConnectionResult onConnect(MediaSession s, MediaSession.ControllerInfo controller) {
+                // O serviço é exportado para que o sistema possa controlá-lo; não aceite
+                // sessões iniciadas por aplicativos que o AndroidX Media3 não considera confiáveis.
+                if (!controller.isTrusted()) return MediaSession.ConnectionResult.reject();
                 SessionCommands cmds = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                         .buildUpon().add(closeCmd).build();
                 return new MediaSession.ConnectionResult.AcceptedResultBuilder(s)
@@ -882,7 +885,7 @@ public class MusicaPlaybackService extends MediaSessionService {
     @Nullable
     @Override
     public MediaSession onGetSession(MediaSession.ControllerInfo controllerInfo) {
-        return session;
+        return controllerInfo.isTrusted() ? session : null;
     }
 
     @Override
