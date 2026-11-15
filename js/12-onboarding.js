@@ -359,7 +359,7 @@ function obSteps() {
     }];
   }
   const steps = [];
-  if (!native) steps.push({
+  steps.push({
     key: "welcome", title: "Bem-vindo ao Nyx", app: true, shape: [8, 0.07],
     text: "Vamos deixar tudo pronto para você. Leva menos de um minuto.",
     primary: "Vamos lá"
