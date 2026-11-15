@@ -416,6 +416,25 @@ function pageBiblioteca() {
       getIgnoredFolders(),
       "ignored"
     ));
+    if (typeof openMediaAudioManager === "function") {
+      const mediaSec = el("div", "set-sec");
+      const mediaRow = el("button", "set-row");
+      const mediaText = el("div", "set-row-text");
+      mediaText.append(el("strong", "", "Pastas de áudio do aparelho"), el("span", "",
+        "Encontre áudios no dispositivo e escolha o que deve ser ignorado"));
+      mediaRow.append(mediaText, el("span", "material-symbols-rounded", "folder"));
+      mediaRow.onclick = openMediaAudioManager;
+      mediaSec.appendChild(mediaRow);
+      if (lsGet("mediaAudioEnabled", false)) {
+        const refreshRow = el("button", "set-row");
+        const refreshText = el("div", "set-row-text");
+        refreshText.append(el("strong", "", "Atualizar áudios do aparelho"), el("span", "", "Procura músicas novas sem remover as já importadas"));
+        refreshRow.append(refreshText, el("span", "material-symbols-rounded", "refresh"));
+        refreshRow.onclick = () => syncMediaAudioLibrary(true);
+        mediaSec.appendChild(refreshRow);
+      }
+      out.push(mediaSec);
+    }
     if (getWatchedFolders().length) {
       const syncSec = el("div", "set-sec");
       const syncRow = el("button", "set-row");

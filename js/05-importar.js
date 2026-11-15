@@ -488,6 +488,323 @@ async function importFiles(list, origem, options = {}) {
   return { files: files.length, added, notStored, lyricsAdded };
 }
 
+/* ==========================================================
+   Biblioteca de áudio do Android (MediaStore)
+   ========================================================== */
+function normalizeMediaAudioPath(path) {
+  const normalized = String(path || "").replace(/\\/g, "/");
+  return normalized === "/" ? "/" : normalized.replace(/\/+$/g, "");
+}
+
+function mediaAudioFolderKey(folder) {
+  const volume = String(folder && folder.volumeName || "");
+  return volume + "::" + normalizeMediaAudioPath(folder && folder.relativePath);
+}
+
+function mediaAudioCanonicalLocation(volumeName, path) {
+  let volume = String(volumeName || "");
+  let normalizedPath = normalizeMediaAudioPath(path);
+  if (volume === "external_primary" || volume === "primary") volume = "primary";
+  else if (volume === "external") {
+    const selfPrimary = normalizedPath.match(/^\/storage\/self\/primary\/?(.*)$/i);
+    const emulated = normalizedPath.match(/^\/storage\/emulated\/0\/?(.*)$/i);
+    const mounted = normalizedPath.match(/^\/storage\/([^/]+)\/?(.*)$/i);
+    if (selfPrimary || emulated) {
+      volume = "primary";
+      normalizedPath = (selfPrimary || emulated)[1] || "";
+    } else if (mounted) {
+      volume = mounted[1];
+      normalizedPath = mounted[2] || "";
+    } else volume = "primary";
+  }
+  return {
+    volume: volume.toLocaleLowerCase("en-US"),
+    path: normalizedPath.replace(/^\/+|\/+$/g, "").normalize("NFKC").toLocaleLowerCase("en-US")
+  };
+}
+
+function mediaAudioCanonicalFileKey(volumeName, relativePath, name) {
+  const fullPath = [normalizeMediaAudioPath(relativePath), String(name || "").replace(/^\/+/, "")]
+    .filter(Boolean).join("/");
+  const location = mediaAudioCanonicalLocation(volumeName, fullPath);
+  if (!location.volume || !location.path) return "";
+  return "android-audio-path::" + location.volume + "::" + location.path;
+}
+
+function mediaAudioCanonicalFromDocumentId(documentId) {
+  const id = String(documentId || "");
+  const split = id.indexOf(":");
+  if (split <= 0 || split === id.length - 1) return "";
+  return mediaAudioCanonicalFileKey(id.slice(0, split), "", id.slice(split + 1));
+}
+
+function mediaAudioCanonicalFromSaf(treeUri, relativePath) {
+  const match = String(treeUri || "").match(/\/tree\/([^/?#]+)/i);
+  if (!match) return "";
+  let documentId;
+  try { documentId = decodeURIComponent(match[1]); } catch (_) { return ""; }
+  const split = documentId.indexOf(":");
+  if (split <= 0) return "";
+  const volume = documentId.slice(0, split);
+  const rootPath = documentId.slice(split + 1);
+  const fullPath = [rootPath, normalizeMediaAudioPath(relativePath)].filter(Boolean).join("/");
+  return mediaAudioCanonicalFileKey(volume, "", fullPath);
+}
+
+function mediaAudioCanonicalFromWatchedSourceKey(sourceKey) {
+  const key = String(sourceKey || "");
+  if (key.startsWith("android-audio-path::")) return key;
+  if (key.startsWith("android-document::")) {
+    const rest = key.slice("android-document::".length);
+    const split = rest.indexOf("::");
+    if (split < 0 || !rest.slice(0, split).includes("externalstorage.documents")) return "";
+    return mediaAudioCanonicalFromDocumentId(rest.slice(split + 2));
+  }
+  const parts = key.split("::");
+  if (parts.length < 5 || !parts[3].startsWith("content://")) return "";
+  return mediaAudioCanonicalFromSaf(parts[3], parts.slice(4).join("::"));
+}
+
+function mediaAudioCanonicalKeyIsExcluded(canonicalKey, excluded = getMediaAudioExcludedFolders()) {
+  const prefix = "android-audio-path::";
+  const key = String(canonicalKey || "");
+  if (!key.startsWith(prefix)) return false;
+  const rest = key.slice(prefix.length);
+  const split = rest.indexOf("::");
+  if (split < 0) return false;
+  const volume = rest.slice(0, split);
+  const path = rest.slice(split + 2);
+  return excluded.some(folder => {
+    const location = mediaAudioCanonicalLocation(folder.volumeName, folder.relativePath);
+    return location.volume === volume
+      && (!location.path || path === location.path || path.startsWith(location.path + "/"));
+  });
+}
+
+function getMediaAudioExcludedFolders() {
+  const saved = lsGet("mediaAudioExcludedFolders", []);
+  if (!Array.isArray(saved)) return [];
+  const unique = new Map();
+  saved.forEach(folder => {
+    if (!folder || typeof folder !== "object") return;
+    const volumeName = String(folder.volumeName || "");
+    if (!volumeName) return;
+    const normalized = {
+      volumeName,
+      relativePath: normalizeMediaAudioPath(folder.relativePath),
+      name: String(folder.name || "Pasta")
+    };
+    unique.set(mediaAudioFolderKey(normalized), normalized);
+  });
+  return Array.from(unique.values());
+}
+
+function getMediaAudioImportExclusions() {
+  const unique = new Map();
+  const add = folder => {
+    const location = mediaAudioCanonicalLocation(folder.volumeName, folder.relativePath);
+    const key = location.volume + "::" + location.path;
+    if (!unique.has(key)) unique.set(key, folder);
+  };
+  getMediaAudioExcludedFolders().forEach(add);
+  if (typeof getIgnoredFolders === "function") {
+    getIgnoredFolders().forEach(folder => {
+      const canonical = mediaAudioCanonicalFromSaf(folder.uri, "");
+      const prefix = "android-audio-path::";
+      if (!canonical.startsWith(prefix)) return;
+      const rest = canonical.slice(prefix.length);
+      const split = rest.indexOf("::");
+      if (split <= 0) return;
+      add({
+        volumeName: rest.slice(0, split),
+        relativePath: rest.slice(split + 2),
+        name: String(folder.name || "Pasta")
+      });
+    });
+  }
+  return Array.from(unique.values());
+}
+
+function setMediaAudioExcludedFolders(folders) {
+  const unique = new Map();
+  (Array.isArray(folders) ? folders : []).forEach(folder => {
+    if (!folder || !folder.volumeName) return;
+    const normalized = {
+      volumeName: String(folder.volumeName),
+      relativePath: normalizeMediaAudioPath(folder.relativePath),
+      name: String(folder.name || "Pasta")
+    };
+    unique.set(mediaAudioFolderKey(normalized), normalized);
+  });
+  lsSet("mediaAudioExcludedFolders", Array.from(unique.values()));
+}
+
+function mediaAudioFolderIsExcluded(folder, excluded = getMediaAudioImportExclusions()) {
+  const location = mediaAudioCanonicalLocation(folder && folder.volumeName, folder && folder.relativePath);
+  return excluded.some(parent => {
+    const parentLocation = mediaAudioCanonicalLocation(parent.volumeName, parent.relativePath);
+    return parentLocation.volume === location.volume
+      && (!parentLocation.path || location.path === parentLocation.path || location.path.startsWith(parentLocation.path + "/"));
+  });
+}
+
+async function readMediaAudioFile(item, volumeName) {
+  if (!MN || typeof MN.readFolderFileChunk !== "function" || !item || !item.uri) {
+    throw new Error("Leitura de áudio do Android indisponível");
+  }
+  const parts = [];
+  let offset = 0;
+  let done = false;
+  while (!done) {
+    const chunk = await MN.readFolderFileChunk({ uri: item.uri, offset, chunkSize: 512 * 1024 });
+    const binary = atob(chunk.base64 || "");
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (bytes.length) parts.push(bytes);
+    offset = Number(chunk.nextOffset) || (offset + bytes.length);
+    done = !!chunk.done;
+    if (!bytes.length && !done) throw new Error("O Android não retornou dados do áudio.");
+  }
+  const file = new File(parts, item.name || "áudio", {
+    type: item.mimeType || "application/octet-stream",
+    lastModified: Math.max(0, Number(item.lastModified) || 0)
+  });
+  const canonicalKey = mediaAudioCanonicalFileKey(volumeName, item.relativePath, item.name);
+  const sourceId = canonicalKey || item.sourceKey;
+  if (sourceId) Object.defineProperty(file, "sourceDocumentId", { value: String(sourceId) });
+  const path = [normalizeMediaAudioPath(item.relativePath), item.name || ""].filter(Boolean).join("/");
+  if (path) Object.defineProperty(file, "sourcePath", { value: path });
+  return file;
+}
+
+async function importMediaAudioFolders(folders, options = {}) {
+  if (!MN || typeof MN.listMediaAudioFiles !== "function") {
+    throw new Error("A busca de áudios do aparelho não está disponível nesta versão do Nyx.");
+  }
+  const excluded = options.excludedFolders || getMediaAudioImportExclusions();
+  const active = (Array.isArray(folders) ? folders : []).filter(folder => !mediaAudioFolderIsExcluded(folder, excluded));
+  const expected = active.reduce((sum, folder) => sum + (Number(folder.count) || 0), 0);
+  const existingCanonical = new Set();
+  songs.forEach(song => {
+    const canonical = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || (song.file ? fileIdentity(song.file) : ""));
+    if (canonical) existingCanonical.add(canonical);
+  });
+  let processed = 0;
+  let added = 0;
+  let failed = 0;
+  let sinceRefresh = 0;
+
+  for (const folder of active) {
+    let afterId = "";
+    let done = false;
+    while (!done) {
+      const page = await MN.listMediaAudioFiles({
+        volumeName: folder.volumeName,
+        relativePath: normalizeMediaAudioPath(folder.relativePath),
+        afterId,
+        limit: 50
+      });
+      const items = Array.isArray(page && page.items) ? page.items : [];
+      for (const item of items) {
+        try {
+          const itemFolder = {
+            volumeName: folder.volumeName,
+            relativePath: item.relativePath || folder.relativePath
+          };
+          const latestExclusions = () => excluded.concat(getMediaAudioImportExclusions());
+          if (mediaAudioFolderIsExcluded(itemFolder, latestExclusions())) {
+            processed++;
+            if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
+            continue;
+          }
+          const canonical = mediaAudioCanonicalFileKey(folder.volumeName, item.relativePath || folder.relativePath, item.name);
+          if (canonical && existingCanonical.has(canonical)) {
+            processed++;
+            if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
+            continue;
+          }
+          const file = await readMediaAudioFile(item, folder.volumeName);
+          if (mediaAudioFolderIsExcluded(itemFolder, latestExclusions())) {
+            processed++;
+            if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
+            continue;
+          }
+          const result = await addFile(file);
+          if (result.added) {
+            added++;
+            if (canonical) existingCanonical.add(canonical);
+          }
+        } catch (e) {
+          failed++;
+          logErr("media-audio:import", e);
+        }
+        processed++;
+        sinceRefresh++;
+        if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
+        if (sinceRefresh >= 8) {
+          refreshAll();
+          sinceRefresh = 0;
+        }
+      }
+      const next = String(page && page.nextAfterId || "");
+      done = !!(page && page.done) || !items.length || !next || next === afterId;
+      afterId = next;
+    }
+  }
+  refreshAll();
+  return { processed, expected, added, failed };
+}
+
+let mediaAudioSyncPromise = null;
+let mediaAudioSyncRequested = false;
+let mediaAudioSyncManualRequested = false;
+
+async function runMediaAudioSync(manual) {
+  if (typeof MN.hasAudioLibraryAccess !== "function" || typeof MN.listMediaAudioFolders !== "function") return null;
+  const access = await MN.hasAudioLibraryAccess();
+  if (!access || !access.granted) {
+    if (manual) showToast("Permita o acesso aos áudios nas configurações do Android para atualizar a biblioteca.");
+    return null;
+  }
+  const result = await MN.listMediaAudioFolders();
+  const folders = Array.isArray(result && result.folders) ? result.folders : [];
+  const imported = await importMediaAudioFolders(folders);
+  if (manual) {
+    if (imported.failed) showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
+    else if (imported.added) showToast(imported.added + (imported.added === 1 ? " áudio novo importado" : " áudios novos importados"));
+    else showToast("A biblioteca já está atualizada.");
+  }
+  return imported;
+}
+
+function syncMediaAudioLibrary(manual = false) {
+  if (!MN || !lsGet("mediaAudioEnabled", false)) return Promise.resolve(null);
+  if (mediaAudioSyncPromise) {
+    mediaAudioSyncRequested = true;
+    mediaAudioSyncManualRequested = mediaAudioSyncManualRequested || manual;
+    return mediaAudioSyncPromise;
+  }
+  mediaAudioSyncPromise = (async () => {
+    let report = manual;
+    let result = null;
+    do {
+      mediaAudioSyncRequested = false;
+      report = report || mediaAudioSyncManualRequested;
+      mediaAudioSyncManualRequested = false;
+      try {
+        result = await runMediaAudioSync(report);
+      } catch (error) {
+        logErr("media-audio:sync", error);
+        if (report) showToast("Não foi possível atualizar os áudios. Tente novamente.");
+        result = null;
+      }
+      report = false;
+    } while (mediaAudioSyncRequested);
+    return result;
+  })().finally(() => { mediaAudioSyncPromise = null; });
+  return mediaAudioSyncPromise;
+}
+
 let fileImportTask = Promise.resolve();
 fileInput.addEventListener("change", () => {
   fileImportTask = importFiles(fileInput.files);

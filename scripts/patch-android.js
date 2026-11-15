@@ -38,6 +38,35 @@ if (!activity.includes("registerPlugin(MusicaPlugin.class)")) {
 }
 
 let xml = fs.readFileSync(manifestPath, "utf8");
+function ensurePermission(permission, maxSdkVersion) {
+  const escaped = permission.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const declaration = new RegExp('<uses-permission\\b(?=[^>]*android:name="' + escaped + '")[^>]*\\/?\\s*>');
+  const match = xml.match(declaration);
+  if (!match) {
+    if (!xml.includes("<application")) throw new Error("AndroidManifest sem tag <application>");
+    const max = maxSdkVersion == null ? "" : ' android:maxSdkVersion="' + maxSdkVersion + '"';
+    xml = xml.replace("<application", '    <uses-permission android:name="' + permission + '"' + max + " />\n    <application");
+    return true;
+  }
+
+  let updated = match[0];
+  const maxAttribute = /\s+android:maxSdkVersion="[^"]*"/;
+  if (maxSdkVersion == null) {
+    updated = updated.replace(maxAttribute, "");
+  } else if (maxAttribute.test(updated)) {
+    updated = updated.replace(maxAttribute, ' android:maxSdkVersion="' + maxSdkVersion + '"');
+  } else {
+    updated = updated.replace(/\s*\/?\s*>$/, ' android:maxSdkVersion="' + maxSdkVersion + '" />');
+  }
+  if (updated === match[0]) return false;
+  xml = xml.replace(match[0], updated);
+  return true;
+}
+
+let audioPermissionsChanged = false;
+audioPermissionsChanged = ensurePermission("android.permission.READ_EXTERNAL_STORAGE", 32) || audioPermissionsChanged;
+audioPermissionsChanged = ensurePermission("android.permission.READ_MEDIA_AUDIO", null) || audioPermissionsChanged;
+
 const missingPermissions = [
   "android.permission.INTERNET",
   "android.permission.FOREGROUND_SERVICE",
@@ -74,7 +103,7 @@ if (services.length) {
   xml = xml.replace("</application>", services.join("\n") + "\n    </application>");
 }
 
-if (missingPermissions.length || services.length) {
+if (audioPermissionsChanged || missingPermissions.length || services.length) {
   fs.writeFileSync(manifestPath, xml);
   console.log("AndroidManifest atualizado (permissões e serviços verificados)");
 }
