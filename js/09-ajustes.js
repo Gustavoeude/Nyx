@@ -378,7 +378,7 @@ function directorySettingsGroup(title, description, folders, kind) {
   if (!folders.length) {
     sec.appendChild(el("div", "directory-empty", kind === "ignored"
       ? "Nenhuma pasta ignorada"
-      : "Nenhuma pasta monitorada"));
+      : "Nenhuma pasta adicionada manualmente"));
   }
   folders.forEach(folder => {
     const row = el("div", "set-row directory-row");
@@ -405,23 +405,17 @@ function pageBiblioteca() {
   const out = [];
   if (MN && typeof addDirectory === "function") {
     out.push(directorySettingsGroup(
-      "Pastas monitoradas",
-      "O Nyx verifica estas pastas ao abrir ou retomar o app.",
+      "Pastas escolhidas manualmente",
+      "Pastas adicionadas aqui são opcionais; as demais com áudio são gerenciadas abaixo.",
       getWatchedFolders(),
       "watched"
-    ));
-    out.push(directorySettingsGroup(
-      "Pastas ignoradas",
-      "O Nyx pula estas pastas nas novas varreduras; músicas já importadas permanecem.",
-      getIgnoredFolders(),
-      "ignored"
     ));
     if (typeof openMediaAudioManager === "function") {
       const mediaSec = el("div", "set-sec");
       const mediaRow = el("button", "set-row");
       const mediaText = el("div", "set-row-text");
       mediaText.append(el("strong", "", "Pastas de áudio do aparelho"), el("span", "",
-        "Busca áudio em todo o aparelho e permite escolher pastas para ignorar."));
+        "As pastas não marcadas são incluídas automaticamente. Marque apenas as que quer ignorar."));
       mediaRow.append(mediaText, el("span", "material-symbols-rounded", "folder"));
       mediaRow.onclick = openMediaAudioManager;
       mediaSec.appendChild(mediaRow);
@@ -463,9 +457,9 @@ function pageBiblioteca() {
   const summaryText = el("div", "set-row-text");
   summaryText.appendChild(el("strong", "", "Manutenção"));
   summary.append(
-    el("span", "material-symbols-rounded set-disclosure-leading-icon", "build"),
+    el("span", "material-symbols-rounded set-disclosure-leading-icon", "settings"),
     summaryText,
-    el("span", "material-symbols-rounded set-disclosure-icon", "expand_more")
+    el("span", "material-symbols-rounded set-disclosure-icon", "keyboard_arrow_down")
   );
   genreSec.appendChild(summary);
 
