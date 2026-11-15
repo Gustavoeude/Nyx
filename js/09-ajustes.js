@@ -16,8 +16,16 @@ const ACCENTS = [
 
 function applyWallpaper() {
   const image = typeof settings.wallpaper === "string" ? settings.wallpaper : "";
+  let layer = document.getElementById("wallpaperLayer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "wallpaperLayer";
+    layer.className = "wallpaper-layer";
+    layer.setAttribute("aria-hidden", "true");
+    document.body.insertBefore(layer, document.body.firstChild);
+  }
+  layer.style.backgroundImage = image ? 'url("' + image + '")' : "none";
   document.body.classList.toggle("has-wallpaper", !!image);
-  document.body.style.setProperty("--custom-wallpaper", image ? 'url("' + image + '")' : "none");
   const opacity = Math.min(0.55, Math.max(0.08, Number(settings.wallpaperOpacity ?? 0.28)));
   const blur = Math.min(18, Math.max(0, Number(settings.wallpaperBlur ?? 0)));
   document.body.style.setProperty("--wallpaper-opacity", String(opacity));
