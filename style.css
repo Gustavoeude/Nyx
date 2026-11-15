@@ -3502,8 +3502,8 @@ body::after {
 .pull-refresh-indicator.is-pulling { transition: none; }
 
 .pull-refresh-shape {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: none;
   clip-path: url(#clip-scal8);
   background: var(--md-primary);
