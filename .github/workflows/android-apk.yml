@@ -2,6 +2,11 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag de release existente a compilar/publicar; vazio gera APK de depuração"
+        required: false
+        type: string
   push:
     branches: [main, "fix/**", "feat/**"]
     tags: ["v*"]
@@ -34,6 +39,7 @@ jobs:
       - name: Baixar código
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.release_tag || github.ref }}
           persist-credentials: false
 
       - name: Configurar Node.js
@@ -48,9 +54,9 @@ jobs:
           java-version: 21
 
       - name: Sincronizar versão com a tag da release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Tag inválida: $RELEASE_TAG. Use o formato vMAJOR.MINOR.PATCH, por exemplo v1.2.2."
@@ -81,10 +87,28 @@ jobs:
       - name: Sincronizar projeto Android
         run: npx cap sync android
 
+      - name: Ajustar versionName para release manual
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          node - "$VERSION" <<'NODE'
+          const fs = require("fs");
+          const file = "android/app/build.gradle";
+          const version = process.argv[2];
+          const gradle = fs.readFileSync(file, "utf8");
+          const updated = gradle.replace(/versionName\s+"[^"]+"/, `versionName "${version}"`);
+          if (updated === gradle) throw new Error("versionName não encontrada no build.gradle");
+          fs.writeFileSync(file, updated);
+          NODE
+
       - name: Compilar APK sem credenciais de assinatura
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           mkdir -p out
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* || -n "${RELEASE_TAG:-}" ]]; then
             (cd android && ./gradlew assembleRelease)
             cp android/app/build/outputs/apk/release/app-release-unsigned.apk out/Musica-unsigned.apk
           else
@@ -100,7 +124,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -120,6 +144,8 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Instalar Android Build Tools
         run: sdkmanager "build-tools;35.0.0"
@@ -152,9 +178,10 @@ jobs:
       - name: Publicar a Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          VERSAO="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" out/Nyx.apk \
+          VERSAO="${RELEASE_TAG#v}"
+          gh release create "$RELEASE_TAG" out/Nyx.apk \
             --repo "$GITHUB_REPOSITORY" \
             --title "Nyx $VERSAO" \
             --generate-notes
