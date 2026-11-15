@@ -1,0 +1,36 @@
+/* O body::after também era reutilizado pela faixa inferior da navegação,
+   cujo background sólido substituía o wallpaper definido anteriormente. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: -16px;
+  z-index: 0;
+  pointer-events: none;
+  background-color: transparent;
+  background-image: var(--custom-wallpaper, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  filter: blur(var(--wallpaper-blur, 0px));
+  transform: scale(1.025);
+  transition: opacity .25s ease, filter .25s ease;
+}
+
+body.has-wallpaper::after {
+  opacity: var(--wallpaper-opacity, .28);
+}
+
+/* A faixa inferior fica em outro pseudo-elemento para não apagar o wallpaper. */
+html::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(12px + env(safe-area-inset-bottom));
+  background: var(--md-surface);
+  z-index: 19;
+  pointer-events: none;
+  transition: background-color .5s ease;
+}
