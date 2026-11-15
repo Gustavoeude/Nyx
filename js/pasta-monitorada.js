@@ -10,6 +10,14 @@ let watchedSyncing = false;
 let watchedLastSync = 0;
 let watchedSyncRequested = false;
 let watchedSyncRequestedManual = false;
+let watchedSyncRequestedOptions = null;
+let watchedSyncWaiters = [];
+
+function resolveWatchedSyncWaiters() {
+  if (watchedSyncing || watchedSyncRequested) return;
+  const waiters = watchedSyncWaiters.splice(0);
+  waiters.forEach(resolve => resolve());
+}
 
 function normalizeDirectoryList(value) {
   if (!Array.isArray(value)) return [];
@@ -94,13 +102,14 @@ function normalizedSidecarPath(item) {
     .toLocaleLowerCase("pt-BR");
 }
 
-async function syncWatchedFolder(manual) {
+async function syncWatchedFolder(manual, options = {}) {
   const folders = getWatchedFolders();
   if (!MN || typeof MN.listFolderAudio !== "function" || !folders.length) return;
   if (watchedSyncing) {
     watchedSyncRequested = true;
     watchedSyncRequestedManual = watchedSyncRequestedManual || !!manual;
-    return;
+    if (options.cachedListings) watchedSyncRequestedOptions = options;
+    return new Promise(resolve => watchedSyncWaiters.push(resolve));
   }
   watchedSyncing = true;
   try {
@@ -115,19 +124,30 @@ async function syncWatchedFolder(manual) {
       }
     }
 
-    const files = [];
     let discovered = 0;
     let failedFolders = false;
+    let readFailures = 0;
+    let addedTotal = 0;
     for (const folder of folders) {
       let listing;
-      try {
-        listing = await MN.listFolderAudio({ uri: folder.uri, ignoredUris });
-      } catch (e) {
-        failedFolders = true;
-        logErr("pasta:list-folder", e);
-        continue;
+      const cachedListing = options.cachedListings && options.cachedListings.get(folder.uri);
+      if (cachedListing) {
+        listing = cachedListing;
+      } else {
+        try {
+          listing = await MN.listFolderAudio({ uri: folder.uri, ignoredUris });
+        } catch (e) {
+          failedFolders = true;
+          logErr("pasta:list-folder", e);
+          continue;
+        }
       }
-      const items = listing.files || [];
+      const skipPaths = options.skipPathsByUri && options.skipPathsByUri.get(folder.uri) || [];
+      const items = (listing.files || []).filter(item => {
+        if (!skipPaths.length) return true;
+        const path = String(item.relativePath || item.name || "").replace(/\\/g, "/");
+        return !skipPaths.some(skip => path === skip || path.startsWith(skip + "/"));
+      });
       const audio = items.filter(item => !/\.lrc$/i.test(item.name || ""));
       const fresh = audio.filter(item => {
         const keys = watchedItemPaths(item, folder);
@@ -139,18 +159,42 @@ async function syncWatchedFolder(manual) {
       if (!fresh.length) continue;
 
       discovered += fresh.length;
-      const sidecarKeys = new Set(fresh.map(normalizedSidecarPath));
-      const sidecars = items.filter(item => /\.lrc$/i.test(item.name || "") && sidecarKeys.has(normalizedSidecarPath(item)));
-      for (const item of fresh.concat(sidecars)) {
-        try {
-          files.push(await readWatchedFile(item, folder));
-        } catch (e) {
-          logErr("pasta:read-file", e);
+      const sidecars = new Map();
+      items.filter(item => /\.lrc$/i.test(item.name || "")).forEach(item => {
+        const key = normalizedSidecarPath(item);
+        if (!sidecars.has(key)) sidecars.set(key, []);
+        sidecars.get(key).push(item);
+      });
+
+      // Não espere a leitura de toda a pasta: a primeira faixa aparece na biblioteca
+      // assim que estiver pronta; depois atualizamos em lotes para evitar redesenhos excessivos.
+      let index = 0;
+      while (index < fresh.length) {
+        const batchSize = addedTotal === 0 ? 1 : 8;
+        const batch = fresh.slice(index, index + batchSize);
+        index += batch.length;
+        const files = [];
+        for (const item of batch) {
+          try {
+            files.push(await readWatchedFile(item, folder));
+          } catch (e) {
+            readFailures++;
+            logErr("pasta:read-file", e);
+            continue;
+          }
+          for (const sidecar of sidecars.get(normalizedSidecarPath(item)) || []) {
+            try { files.push(await readWatchedFile(sidecar, folder)); }
+            catch (e) { readFailures++; logErr("pasta:read-sidecar", e); }
+          }
+        }
+        if (files.some(file => !/\.lrc$/i.test(file.name || ""))) {
+          const result = await importFiles(files, "diretórios monitorados", { silent: true });
+          addedTotal += result.added;
         }
       }
     }
 
-    if (!discovered || !files.some(file => !/\.lrc$/i.test(file.name || ""))) {
+    if (!discovered) {
       if (manual) showToast(failedFolders
         ? "Não consegui ler um diretório. Verifique o acesso à pasta nos Ajustes."
         : "Diretórios já estão atualizados");
@@ -158,9 +202,15 @@ async function syncWatchedFolder(manual) {
       return;
     }
 
-    showToast("Encontrei " + discovered + (discovered === 1 ? " música nova…" : " músicas novas…"));
-    await importFiles(files, "diretórios monitorados");
-    if (manual && failedFolders) showToast("Alguns diretórios não puderam ser lidos; os demais foram verificados.");
+    if (manual) {
+      let message = addedTotal
+        ? addedTotal + (addedTotal === 1 ? " música adicionada" : " músicas adicionadas")
+        : readFailures ? "Não consegui ler as músicas encontradas. Verifique o acesso à pasta."
+        : "As músicas encontradas já estão na biblioteca";
+      if (failedFolders) message += ". Alguns diretórios não puderam ser lidos";
+      else if (readFailures) message += ". Algumas faixas não puderam ser lidas";
+      showToast(message);
+    }
     watchedLastSync = Date.now();
   } catch (e) {
     logErr("pasta:sync", e);
@@ -169,10 +219,14 @@ async function syncWatchedFolder(manual) {
     watchedSyncing = false;
     if (watchedSyncRequested) {
       const rerunManual = watchedSyncRequestedManual;
+      const rerunOptions = watchedSyncRequestedOptions || {};
       watchedSyncRequested = false;
       watchedSyncRequestedManual = false;
-      Promise.resolve().then(() => syncWatchedFolder(rerunManual)).catch(e => logErr("pasta:rerun", e));
-    }
+      watchedSyncRequestedOptions = null;
+      syncWatchedFolder(rerunManual, rerunOptions)
+        .catch(e => logErr("pasta:rerun", e))
+        .finally(resolveWatchedSyncWaiters);
+    } else resolveWatchedSyncWaiters();
   }
 }
 
