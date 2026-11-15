@@ -14,7 +14,14 @@ const audioExt = /\.(mp3|m4a|m4b|aac|flac|ogg|oga|opus|wav|weba|webm|aiff|aif|al
 const lrcExt = /\.lrc$/i;
 
 function fileIdentity(file) {
-  return [file.name, file.size, file.lastModified || 0, file.sourcePath || file.webkitRelativePath || ""].join("::");
+  if (!file) return "";
+  // O URI do SAF identifica o documento real e permanece salvo em sourceKey.
+  if (file.sourceUri) return "uri::" + String(file.sourceUri);
+  const path = String(file.sourcePath || file.webkitRelativePath || "").replace(/\\/g, "/").normalize("NFKC").toLocaleLowerCase("pt-BR");
+  // Em pastas, caminho + nome + tamanho são mais estáveis que LAST_MODIFIED,
+  // que alguns provedores Android retornam como zero ou alteram entre consultas.
+  if (path) return ["path", path, file.name, file.size].join("::");
+  return ["file", file.name, file.size, file.lastModified || 0].join("::");
 }
 
 function lyricsMatchKey(file) {
@@ -450,6 +457,10 @@ async function readSidecarLyrics(files) {
 
 // Recebe músicas e, se estiverem disponíveis no mesmo lote/pasta, associa arquivos LRC homônimos.
 async function importFiles(list, origem) {
+  // Não comparar com uma biblioteca ainda em processo de carregamento do IndexedDB.
+  if (window.nyxSongsReady) {
+    try { await window.nyxSongsReady; } catch (e) { logErr("importar:load", e); }
+  }
   const selectedFiles = Array.from(list || []);
   const files = selectedFiles.filter(
     f => (f.type || "").startsWith("audio/") || audioExt.test(f.name)
@@ -559,6 +570,7 @@ async function importFolder() {
         }
         try {
           Object.defineProperty(file, "sourcePath", { value: item.relativePath || item.name });
+          Object.defineProperty(file, "sourceUri", { value: item.uri || "" });
         } catch (e) { logErr("importar:523", e); }
         found.push(file);
       }
