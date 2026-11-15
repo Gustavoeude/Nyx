@@ -7,8 +7,6 @@ function openFilePicker() {
   fileInput.click();
 }
 
-$("addBtn").onclick = openFilePicker;
-
 const audioExt = /\.(mp3|m4a|m4b|aac|flac|ogg|oga|opus|wav|weba|webm|aiff|aif|alac|amr|3gp)$/i;
 const lrcExt = /\.lrc$/i;
 
