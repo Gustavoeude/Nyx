@@ -39,6 +39,7 @@ const obScan = new Map();   // uri -> { name, files, folders }
 const obIgnoreSel = new Set();
 const obIgnoreSeen = new Set();
 let obStatus = null;        // { baseline, expected, done, timer }
+let obCommitted = false;
 
 const obIsLrc = f => /\.lrc$/i.test((f && f.name) || "");
 const obRel = f => String((f && f.relativePath) || "").replace(/\\/g, "/");
@@ -52,11 +53,11 @@ function obScanTotal() {
 // Subpastas que têm músicas (mesma ideia da lista de pastas do PixelPlayer).
 function obIgnoreRows() {
   const rows = [];
-  obScan.forEach(sc => {
+  obScan.forEach((sc, rootUri) => {
     (sc.folders || []).forEach(folder => {
       const prefix = folder.relativePath + "/";
       const total = sc.files.filter(f => !obIsLrc(f) && obRel(f).startsWith(prefix)).length;
-      if (total) rows.push({ uri: folder.uri, name: folder.name, path: sc.name + "/" + folder.relativePath, rel: folder.relativePath, total });
+      if (total) rows.push({ uri: folder.uri, rootUri, name: folder.name, path: sc.name + "/" + folder.relativePath, rel: folder.relativePath, total });
     });
   });
   rows.sort((a, b) => a.path.localeCompare(b.path, "pt-BR", { numeric: true }));
@@ -85,6 +86,7 @@ async function obPickFolder() {
   }
   obScan.set(selected.uri, { name, files, folders });
   if (!obChosen.some(f => f.uri === selected.uri)) obChosen.push({ uri: selected.uri, name });
+  obCommitted = false;
   const total = obScanTotal();
   const names = obChosen.map(f => f.name);
   return {
@@ -95,7 +97,8 @@ async function obPickFolder() {
 
 // Registra as pastas em "Lista de Diretórios", grava as ignoradas e importa as músicas.
 function obCommit() {
-  if (!obChosen.length) return;
+  if (obCommitted || !obChosen.length) return;
+  obCommitted = true;
   const rows = obIgnoreRows();
   const rowUris = new Set(rows.map(r => r.uri));
   const picked = rows.filter(r => obIgnoreSel.has(r.uri));
@@ -110,6 +113,11 @@ function obCommit() {
 
   // quantas músicas devem entrar (para o indicador de progresso)
   const skipPrefixes = picked.map(r => r.path);
+  const skipPathsByUri = new Map();
+  picked.forEach(r => {
+    if (!skipPathsByUri.has(r.rootUri)) skipPathsByUri.set(r.rootUri, []);
+    skipPathsByUri.get(r.rootUri).push(r.rel);
+  });
   let expected = 0;
   obScan.forEach(sc => {
     expected += sc.files.filter(f => {
@@ -124,7 +132,7 @@ function obCommit() {
   const st = obStatus;
   st.timer = setInterval(obUpdateStatus, 400);
   obUpdateStatus();
-  syncWatchedFolder(true).catch(e => logErr("onboarding:sync", e)).finally(() => {
+  syncWatchedFolder(true, { cachedListings: obScan, skipPathsByUri }).catch(e => logErr("onboarding:sync", e)).finally(() => {
     st.done = true;
     obUpdateStatus();
     setTimeout(() => { if (obStatus === st) { clearInterval(st.timer); obStatus = null; obUpdateStatus(); } }, 3500);
@@ -416,6 +424,7 @@ function obFolderList() {
     row.onclick = () => {
       const on = !obIgnoreSel.has(r.uri);
       if (on) obIgnoreSel.add(r.uri); else obIgnoreSel.delete(r.uri);
+      obCommitted = false;
       row.classList.toggle("on", on);
       row.setAttribute("aria-checked", on ? "true" : "false");
       refresh();
@@ -569,6 +578,7 @@ function startOnboarding(instant) {
   obBusy = false;
   obActionBusy = false;
   obResults = {};
+  obCommitted = false;
   obShapeR = null;
   obChosen = [];
   obScan.clear();

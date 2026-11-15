@@ -450,7 +450,7 @@ async function readSidecarLyrics(files) {
 }
 
 // Recebe músicas e, se estiverem disponíveis no mesmo lote/pasta, associa arquivos LRC homônimos.
-async function importFiles(list, origem) {
+async function importFiles(list, origem, options = {}) {
   const selectedFiles = Array.from(list || []);
   const files = selectedFiles.filter(
     f => (f.type || "").startsWith("audio/") || audioExt.test(f.name)
@@ -471,7 +471,9 @@ async function importFiles(list, origem) {
 
   refreshAll();
 
-  if (files.length === 0) {
+  if (options.silent) {
+    return { files: files.length, added, notStored, lyricsAdded };
+  } else if (files.length === 0) {
     showToast(selectedFiles.some(f => lrcExt.test(f.name))
       ? "Selecione também a música correspondente para associar a letra."
       : origem ? "Nenhuma música encontrada nessa pasta" : "Nenhum áudio selecionado");
@@ -483,6 +485,7 @@ async function importFiles(list, origem) {
     if (lyricsAdded) message += " · " + lyricsAdded + (lyricsAdded === 1 ? " letra encontrada" : " letras encontradas");
     showToast(message);
   }
+  return { files: files.length, added, notStored, lyricsAdded };
 }
 
 let fileImportTask = Promise.resolve();
