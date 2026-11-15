@@ -258,7 +258,7 @@ document.querySelectorAll(".nav-item").forEach(b => {
   if (!indicator || !shape || !status) return;
 
   const THRESHOLD = 92;
-  const MAX_HEIGHT = 58;
+  const MAX_HEIGHT = 36;
   const BLOCK = ".hscroll, .filters, #homeChips, input, textarea, select, [contenteditable='true'], .seek-wrap, .sheet, .dialog, .scrim, .full-player, .now-playing, .bottom-nav, .playlist-bar, .settings-page, .ob";
   let startX = 0;
   let startY = 0;
@@ -402,7 +402,7 @@ document.querySelectorAll(".nav-item").forEach(b => {
     e.preventDefault();
     distance = dy;
     const progress = Math.min(1.25, distance / THRESHOLD);
-    indicator.style.height = Math.min(MAX_HEIGHT, distance * 0.58) + "px";
+    indicator.style.height = Math.min(MAX_HEIGHT, distance * 0.39) + "px";
     shape.style.setProperty("--pull-scale", String((0.48 + Math.min(1, progress) * 0.52).toFixed(3)));
     shape.style.setProperty("--pull-rotation", (progress * 150).toFixed(1) + "deg");
     shape.style.setProperty("--pull-opacity", String(Math.min(1, progress * 1.15).toFixed(3)));
