@@ -790,16 +790,6 @@ body[data-page="library"] .topbar {
   to   { opacity: 1; transform: none; }
 }
 
-/* a capa "pula" quando troca de música */
-.now-cover.pop {
-  animation: coverPop .4s var(--ease);
-}
-
-@keyframes coverPop {
-  0%   { transform: scale(.78) rotate(-6deg); opacity: .5; }
-  100% { transform: none; opacity: 1; }
-}
-
 .now-cover {
   width: 48px;
   height: 48px;
@@ -1744,28 +1734,6 @@ body[data-page="library"] .topbar {
   to   { transform: scale(1.8); opacity: 0; }
 }
 
-/* capinha do mini player vira disco e gira enquanto toca */
-.now-cover {
-  transition: border-radius .5s var(--ease);
-}
-
-body.is-playing .now-cover {
-  border-radius: 50%;
-}
-
-.now-cover img {
-  animation: discSpin 14s linear infinite;
-  animation-play-state: paused;
-}
-
-body.is-playing .now-cover img {
-  animation-play-state: running;
-}
-
-@keyframes discSpin {
-  to { transform: rotate(360deg); }
-}
-
 /* ==========================================================
    Player completo mais caprichado
    ========================================================== */
@@ -1816,6 +1784,10 @@ body.disc .fp-cover img {
 
 body.disc.is-playing .fp-cover img {
   animation-play-state: running;
+}
+
+@keyframes discSpin {
+  to { transform: rotate(360deg); }
 }
 
 body.disc .fp-cover::after {
@@ -3226,11 +3198,6 @@ body::before { display: none !important; }
   clip-path: url(#clip-scal6);
   background: var(--md-primary);
   color: var(--md-on-primary);
-}
-/* tocando: vira disco (comportamento que já existia) */
-body.is-playing .now-cover {
-  border-radius: 50%;
-  clip-path: none;
 }
 .now-play {
   background: var(--md-primary);

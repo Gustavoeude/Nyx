@@ -19,14 +19,11 @@ function attachRipple(node) {
   });
 }
 
-let lastMiniId = null;
-
 function updateMiniPlayer() {
   const box = $("nowPlaying");
 
   if (songs.length === 0) {
     box.hidden = true;
-    lastMiniId = null;
     return;
   }
 
@@ -40,16 +37,6 @@ function updateMiniPlayer() {
   setCover($("nowCover"), song.cover);
   $("nowLyrics").classList.toggle("has-lyrics", !!song.lyrics);
   $("nowLyrics").setAttribute("aria-label", song.lyrics ? "Mostrar letra disponível" : "Abrir e buscar a letra");
-
-  // animação da capa só quando a música muda
-  if (lastMiniId !== null && lastMiniId !== song.id) {
-    const cover = $("nowCover");
-    cover.classList.remove("pop");
-    void cover.offsetWidth;
-    cover.classList.add("pop");
-    setTimeout(() => cover.classList.remove("pop"), 450);
-  }
-  lastMiniId = song.id;
 }
 
 attachRipple($("nowPlaying"));
@@ -108,7 +95,7 @@ function updatePlayButtons() {
   $("heroPlay").classList.toggle("playing", playing);
   $("fpPlay").classList.toggle("playing", playing);
 
-  // usado pelas animações (capa girando, bolhas, etc.)
+  // estado geral usado por outros efeitos visuais do player
   document.body.classList.toggle("is-playing", playing);
 }
 
