@@ -256,6 +256,12 @@ audio.addEventListener("error", () => {
 });
 
 audio.addEventListener("ended", () => {
+  // No navegador, o timer precisa parar antes da lógica de repetir uma faixa reiniciá-la.
+  if (!(MN && nativeMode) && sleepState.active && sleepState.endOfTrack) {
+    sleepFiredJs();
+    return;
+  }
+
   const next = pickNext(true);
 
   if (next === null) {

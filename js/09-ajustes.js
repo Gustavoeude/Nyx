@@ -469,10 +469,10 @@ function pagePrivacidade() {
   const sec = el("div", "set-sec");
   sec.appendChild(el("div", "set-label", "Busca online"));
   sec.appendChild(
-    switchRow("Buscar letras automaticamente", "Consulta o LRCLIB usando título, artista e duração; o áudio não é enviado", "autoLyrics")
+    switchRow("Buscar letras automaticamente", "Consulta o LRCLIB usando título, artista e álbum quando disponíveis; o áudio não é enviado", "autoLyrics")
   );
   sec.appendChild(
-    switchRow("Buscar capas automaticamente", "Consulta a iTunes usando título e artista ao importar; o áudio não é enviado", "autoCovers")
+    switchRow("Buscar capas automaticamente", "Consulta a iTunes usando título, artista e álbum quando disponíveis; o áudio não é enviado", "autoCovers")
   );
   return [sec];
 }
