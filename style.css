@@ -1942,6 +1942,10 @@ body.disc .fp-cover::after {
   cursor: pointer;
 }
 .set-disclosure > summary::-webkit-details-marker { display: none; }
+.set-disclosure-summary { min-height: 48px; }
+.set-disclosure-summary .set-row-text strong { font-size: 14px; }
+.set-disclosure-leading-icon { color: var(--md-primary); font-size: 20px; }
+.set-disclosure > summary:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
 .set-disclosure-icon { transition: transform .2s var(--ease); }
 .set-disclosure[open] .set-disclosure-icon { transform: rotate(180deg); }
 .set-disclosure-body {

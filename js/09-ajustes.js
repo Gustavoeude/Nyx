@@ -461,11 +461,12 @@ function pageBiblioteca() {
   const genreSec = el("details", "set-sec set-disclosure");
   const summary = el("summary", "set-row set-disclosure-summary");
   const summaryText = el("div", "set-row-text");
-  summaryText.append(
-    el("strong", "", "Manutenção"),
-    el("span", "", "Ferramentas para revisar os dados da biblioteca.")
+  summaryText.appendChild(el("strong", "", "Manutenção"));
+  summary.append(
+    el("span", "material-symbols-rounded set-disclosure-leading-icon", "build"),
+    summaryText,
+    el("span", "material-symbols-rounded set-disclosure-icon", "expand_more")
   );
-  summary.append(summaryText, el("span", "material-symbols-rounded set-disclosure-icon", "expand_more"));
   genreSec.appendChild(summary);
 
   const genreBody = el("div", "set-disclosure-body");
