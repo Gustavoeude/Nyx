@@ -13,10 +13,10 @@ let watchedSyncRequestedManual = false;
 let watchedSyncRequestedOptions = null;
 let watchedSyncWaiters = [];
 
-function resolveWatchedSyncWaiters() {
+function resolveWatchedSyncWaiters(result = false) {
   if (watchedSyncing || watchedSyncRequested) return;
   const waiters = watchedSyncWaiters.splice(0);
-  waiters.forEach(resolve => resolve());
+  waiters.forEach(resolve => resolve(!!result));
 }
 
 function normalizeDirectoryList(value) {
@@ -109,7 +109,7 @@ function normalizedSidecarPath(item) {
 
 async function syncWatchedFolder(manual, options = {}) {
   const folders = getWatchedFolders();
-  if (!MN || typeof MN.listFolderAudio !== "function" || !folders.length) return;
+  if (!MN || typeof MN.listFolderAudio !== "function" || !folders.length) return false;
   if (watchedSyncing) {
     watchedSyncRequested = true;
     watchedSyncRequestedManual = watchedSyncRequestedManual || !!manual;
@@ -117,6 +117,7 @@ async function syncWatchedFolder(manual, options = {}) {
     return new Promise(resolve => watchedSyncWaiters.push(resolve));
   }
   watchedSyncing = true;
+  let syncResult = false;
   try {
     const ignoredUris = getIgnoredFolders().map(folder => folder.uri);
     const mediaExcluded = typeof getMediaAudioImportExclusions === "function" ? getMediaAudioImportExclusions() : [];
@@ -137,6 +138,7 @@ async function syncWatchedFolder(manual, options = {}) {
     let discovered = 0;
     let failedFolders = false;
     let readFailures = 0;
+    let importFailures = 0;
     let addedTotal = 0;
     for (const folder of folders) {
       let listing;
@@ -207,6 +209,7 @@ async function syncWatchedFolder(manual, options = {}) {
         if (files.some(file => !/\.lrc$/i.test(file.name || ""))) {
           const result = await importFiles(files, "diretórios monitorados", { silent: true });
           addedTotal += result.added;
+          importFailures += Number(result.failed) || 0;
         }
       }
     }
@@ -216,7 +219,8 @@ async function syncWatchedFolder(manual, options = {}) {
         ? "Não consegui ler um diretório. Verifique o acesso à pasta nos Ajustes."
         : "Diretórios já estão atualizados");
       watchedLastSync = Date.now();
-      return;
+      syncResult = !failedFolders;
+      return syncResult;
     }
 
     if (manual) {
@@ -229,9 +233,12 @@ async function syncWatchedFolder(manual, options = {}) {
       showToast(message);
     }
     watchedLastSync = Date.now();
+    syncResult = !failedFolders && !readFailures && !importFailures;
+    return syncResult;
   } catch (e) {
     logErr("pasta:sync", e);
     if (manual) showToast("Não consegui ler um diretório. Verifique o acesso à pasta nos Ajustes.");
+    return false;
   } finally {
     watchedSyncing = false;
     if (watchedSyncRequested) {
@@ -241,9 +248,9 @@ async function syncWatchedFolder(manual, options = {}) {
       watchedSyncRequestedManual = false;
       watchedSyncRequestedOptions = null;
       syncWatchedFolder(rerunManual, rerunOptions)
-        .catch(e => logErr("pasta:rerun", e))
-        .finally(resolveWatchedSyncWaiters);
-    } else resolveWatchedSyncWaiters();
+        .then(resolveWatchedSyncWaiters)
+        .catch(e => { logErr("pasta:rerun", e); resolveWatchedSyncWaiters(false); });
+    } else resolveWatchedSyncWaiters(syncResult);
   }
 }
 

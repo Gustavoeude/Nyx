@@ -516,17 +516,6 @@ function pageBiblioteca() {
       mediaRow.append(mediaText, el("span", "material-symbols-rounded", "folder"));
       mediaRow.onclick = openMediaAudioManager;
       mediaSec.appendChild(mediaRow);
-      if (lsGet("mediaAudioEnabled", false)) {
-        const refreshRow = el("button", "set-row");
-        const refreshText = el("div", "set-row-text");
-        refreshText.append(el("strong", "", "Atualizar biblioteca do aparelho"), el("span", "", "Procura músicas novas no aparelho; as já importadas permanecem."));
-        refreshRow.append(refreshText, el("span", "material-symbols-rounded", "refresh"));
-        refreshRow.onclick = async () => {
-          await syncMediaAudioLibrary(true);
-          if (settingsPage === "biblioteca") refreshSettingsPage();
-        };
-        mediaSec.appendChild(refreshRow);
-      }
       out.push(mediaSec);
     }
     if (getWatchedFolders().length) {

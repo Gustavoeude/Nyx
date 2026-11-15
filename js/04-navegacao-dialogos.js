@@ -249,6 +249,180 @@ document.querySelectorAll(".nav-item").forEach(b => {
 })();
 
 /* ==========================================================
+   Puxar para atualizar (Início, Buscar e Biblioteca)
+   ========================================================== */
+(function initPullToRefresh() {
+  const indicator = $("pullRefreshIndicator");
+  const shape = indicator && indicator.querySelector(".pull-refresh-shape");
+  const status = $("pullRefreshStatus");
+  if (!indicator || !shape || !status) return;
+
+  const THRESHOLD = 92;
+  const MAX_HEIGHT = 58;
+  const BLOCK = ".hscroll, .filters, #homeChips, input, textarea, select, [contenteditable='true'], .seek-wrap, .sheet, .dialog, .scrim, .full-player, .now-playing, .bottom-nav, .playlist-bar, .settings-page, .ob";
+  let startX = 0;
+  let startY = 0;
+  let distance = 0;
+  let active = false;
+  let pulling = false;
+  let refreshPromise = null;
+  let settleTimer = 0;
+
+  function setStatus(text) {
+    status.textContent = text;
+  }
+
+  function settleIndicator(clearStatus) {
+    active = false;
+    pulling = false;
+    distance = 0;
+    indicator.classList.remove("is-pulling", "is-refreshing");
+    indicator.style.height = "0px";
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      if (refreshPromise) return;
+      shape.style.removeProperty("--pull-scale");
+      shape.style.removeProperty("--pull-rotation");
+      shape.style.removeProperty("--pull-opacity");
+      if (clearStatus) setStatus("");
+    }, 360);
+  }
+
+  function canStart(e) {
+    const page = $(pageIds[document.body.dataset.page]);
+    if (!page || !page.classList.contains("active") || !page.contains(e.target)) return false;
+    if (window.scrollY > 1 || fpOpen || refreshPromise) return false;
+    if (document.body.classList.contains("no-scroll") || document.body.classList.contains("settings-open")) return false;
+    if (document.querySelector(".scrim, .dialog, .sheet, .ob")) return false;
+    return !(e.target.closest && e.target.closest(BLOCK));
+  }
+
+  async function refreshLibrary() {
+    if (refreshPromise) return refreshPromise;
+    indicator.classList.remove("is-pulling");
+    indicator.classList.add("is-refreshing");
+    indicator.style.height = MAX_HEIGHT + "px";
+    shape.style.setProperty("--pull-scale", "1");
+    shape.style.setProperty("--pull-rotation", "0deg");
+    shape.style.setProperty("--pull-opacity", "1");
+    setStatus("Atualizando biblioteca…");
+
+    const startedAt = performance.now();
+    refreshPromise = (async () => {
+      try {
+        let mediaStoreActive = false;
+        let watchedActive = false;
+        let sourceSuccesses = 0;
+        let sourceFailures = 0;
+        if (MN && lsGet("mediaAudioEnabled", false) && typeof syncMediaAudioLibrary === "function") {
+          mediaStoreActive = true;
+          const result = await syncMediaAudioLibrary(true);
+          if (result && typeof result === "object" && !(Number(result.failed) > 0)) sourceSuccesses++;
+          else sourceFailures++;
+        }
+        const watchedFolders = typeof getWatchedFolders === "function" ? getWatchedFolders() : [];
+        if (watchedFolders.length && typeof syncWatchedFolder === "function") {
+          watchedActive = true;
+          const result = await syncWatchedFolder(!mediaStoreActive);
+          if (result === true) sourceSuccesses++;
+          else sourceFailures++;
+        }
+        if (typeof refreshAll === "function") refreshAll();
+        if (!mediaStoreActive && !watchedActive) {
+          showToast("Nenhuma fonte monitorada para atualizar.");
+          setStatus("Nenhuma fonte monitorada para atualizar.");
+        } else if (sourceSuccesses && sourceFailures) {
+          setStatus("Atualização concluída com alguns erros.");
+          showToast("Atualização concluída com alguns erros.");
+        } else if (sourceFailures) setStatus("Não foi possível atualizar a biblioteca.");
+        else setStatus("Biblioteca atualizada.");
+      } catch (error) {
+        logErr("pull-refresh", error);
+        setStatus("Não foi possível atualizar a biblioteca.");
+        showToast("Não foi possível atualizar a biblioteca.");
+      }
+
+      const remaining = Math.max(0, 480 - (performance.now() - startedAt));
+      if (remaining) await new Promise(resolve => setTimeout(resolve, remaining));
+    })().finally(() => {
+      indicator.classList.remove("is-refreshing");
+      indicator.style.height = "0px";
+      refreshPromise = null;
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        shape.style.removeProperty("--pull-scale");
+        shape.style.removeProperty("--pull-rotation");
+        shape.style.removeProperty("--pull-opacity");
+        setStatus("");
+      }, 360);
+    });
+    return refreshPromise;
+  }
+
+  document.addEventListener("touchstart", e => {
+    if (pulling) settleIndicator(true);
+    else {
+      active = false;
+      pulling = false;
+      distance = 0;
+    }
+    if (e.touches.length !== 1 || !canStart(e)) return;
+    clearTimeout(settleTimer);
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    active = true;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", e => {
+    if (!active) return;
+    if (e.touches.length !== 1 || window.scrollY > 1) {
+      settleIndicator(true);
+      return;
+    }
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    if (!pulling) {
+      if (dy <= 8) {
+        if (dy < -8 || Math.abs(dx) > 14) active = false;
+        return;
+      }
+      if (Math.abs(dx) > Math.max(10, dy * 1.15)) {
+        active = false;
+        return;
+      }
+      pulling = true;
+      indicator.classList.add("is-pulling");
+    } else if (dy <= 0 || Math.abs(dx) > dy * 1.15) {
+      settleIndicator(true);
+      return;
+    }
+
+    e.preventDefault();
+    distance = dy;
+    const progress = Math.min(1.25, distance / THRESHOLD);
+    indicator.style.height = Math.min(MAX_HEIGHT, distance * 0.58) + "px";
+    shape.style.setProperty("--pull-scale", String((0.48 + Math.min(1, progress) * 0.52).toFixed(3)));
+    shape.style.setProperty("--pull-rotation", (progress * 150).toFixed(1) + "deg");
+    shape.style.setProperty("--pull-opacity", String(Math.min(1, progress * 1.15).toFixed(3)));
+    setStatus(progress >= 1 ? "Solte para atualizar." : "Puxe para atualizar a biblioteca.");
+  }, { passive: false });
+
+  document.addEventListener("touchend", () => {
+    if (!active) return;
+    active = false;
+    if (!pulling) return;
+    if (distance >= THRESHOLD) refreshLibrary();
+    else settleIndicator(true);
+  }, { passive: true });
+
+  document.addEventListener("touchcancel", () => {
+    if (active || pulling) settleIndicator(true);
+  }, { passive: true });
+})();
+
+/* ==========================================================
    Snackbar, bottom sheet e diálogos (Material 3)
    ========================================================== */
 let toastTimer = null;
