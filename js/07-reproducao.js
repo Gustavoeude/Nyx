@@ -572,11 +572,12 @@ async function nativePushUpcoming() {
       await MN.setUpcoming({ afterId: String(startId), items: [], repeatOne: true });
       return;
     }
-    // Fila longa e que cresce música a música: com o app em segundo plano o JavaScript pode
-    // parar a qualquer momento, e o que já foi enviado ao player nativo precisa bastar sozinho.
+    // O loop é habilitado somente quando a repetição da lista está ligada. A fila em memória
+    // do player nativo contém até NATIVE_LOOKAHEAD faixas; ao acabar, o JavaScript acordado
+    // complementa-a. Se o app estiver congelado, é melhor terminar a reprodução do que repetir
+    // músicas silenciosamente quando o usuário não pediu repetição.
     const planned = upcomingIds(NATIVE_LOOKAHEAD);
-    // a lista continua além da fila nativa? então ela gira em círculo e nunca acaba sozinha
-    const loop = shuffle || repeat === "all" || planned.length >= NATIVE_LOOKAHEAD;
+    const loop = repeat === "all";
 
     // o que o player nativo já tem na fila: só falta enviar o resto (sem copiar tudo de novo)
     let have = [];
