@@ -346,9 +346,27 @@ function pickCoverFor(songId) {
   input.click();
 }
 
+function legacyFileIdentity(file) {
+  return [file.name, file.size, file.lastModified || 0, file.sourcePath || file.webkitRelativePath || ""].join("::");
+}
+
+function legacyFolderIdentityFromKey(key) {
+  const parts = String(key || "").split("::");
+  return parts.length >= 4 ? [parts[0], parts[1], parts.slice(3).join("::")].join("::") : "";
+}
+
 async function addFile(file, automaticLyrics = "") {
   const sourceKey = fileIdentity(file);
-  const duplicate = songs.find(s => s.file && (s.sourceKey || fileIdentity(s.file)) === sourceKey);
+  const legacyKey = legacyFileIdentity(file);
+  const path = String(file.sourcePath || file.webkitRelativePath || "").replace(/\\/g, "/");
+  const legacyPathKey = path ? [file.name, file.size, path].join("::") : "";
+  const duplicate = songs.find(s => {
+    if (!s.file) return false;
+    const savedKey = s.sourceKey || legacyFileIdentity(s.file);
+    return savedKey === sourceKey ||
+      savedKey === legacyKey ||
+      (!!legacyPathKey && legacyFolderIdentityFromKey(savedKey) === legacyPathKey);
+  });
   if (duplicate) {
     if (!duplicate.coverBlob) fetchOnlineCover(duplicate);
     if (!duplicate.lyrics && automaticLyrics) {
