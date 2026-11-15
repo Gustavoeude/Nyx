@@ -44,6 +44,7 @@ body.light {
 
 html {
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: contain;
 }
 
 body {
@@ -717,22 +718,6 @@ body[data-page="library"] .topbar {
   font-variation-settings: "FILL" 1;
 }
 
-/* botão de adicionar (FAB estendido) */
-.library-add-button {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 24px 22px;
-  padding: 0 24px 0 18px;
-  height: 56px;
-  border-radius: var(--shape-m);
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
-  font-weight: 500;
-  font-size: 15px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, .25);
-}
-
 .empty-state {
   text-align: center;
   padding: 35px 15px;
@@ -803,16 +788,6 @@ body[data-page="library"] .topbar {
 @keyframes miniIn {
   from { opacity: 0; transform: translateY(28px) scale(.96); }
   to   { opacity: 1; transform: none; }
-}
-
-/* a capa "pula" quando troca de música */
-.now-cover.pop {
-  animation: coverPop .4s var(--ease);
-}
-
-@keyframes coverPop {
-  0%   { transform: scale(.78) rotate(-6deg); opacity: .5; }
-  100% { transform: none; opacity: 1; }
 }
 
 .now-cover {
@@ -1759,28 +1734,6 @@ body[data-page="library"] .topbar {
   to   { transform: scale(1.8); opacity: 0; }
 }
 
-/* capinha do mini player vira disco e gira enquanto toca */
-.now-cover {
-  transition: border-radius .5s var(--ease);
-}
-
-body.is-playing .now-cover {
-  border-radius: 50%;
-}
-
-.now-cover img {
-  animation: discSpin 14s linear infinite;
-  animation-play-state: paused;
-}
-
-body.is-playing .now-cover img {
-  animation-play-state: running;
-}
-
-@keyframes discSpin {
-  to { transform: rotate(360deg); }
-}
-
 /* ==========================================================
    Player completo mais caprichado
    ========================================================== */
@@ -1831,6 +1784,10 @@ body.disc .fp-cover img {
 
 body.disc.is-playing .fp-cover img {
   animation-play-state: running;
+}
+
+@keyframes discSpin {
+  to { transform: rotate(360deg); }
 }
 
 body.disc .fp-cover::after {
@@ -1953,6 +1910,23 @@ body.disc .fp-cover::after {
   color: var(--md-on-surface-variant);
 }
 
+.set-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.set-disclosure > summary::-webkit-details-marker { display: none; }
+.set-disclosure-summary { min-height: 48px; }
+.set-disclosure-summary .set-row-text strong { font-size: 14px; }
+.set-disclosure-leading-icon { color: var(--md-primary); font-size: 20px; }
+.set-disclosure > summary:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
+.set-disclosure-icon { transition: transform .2s var(--ease); }
+.set-disclosure[open] .set-disclosure-icon { transform: rotate(180deg); }
+.set-disclosure-body {
+  margin: 0 0 8px 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--md-outline-variant);
+}
+
 .directory-settings { padding-top: 8px; }
 .directory-group-head {
   display: flex;
@@ -1971,6 +1945,9 @@ body.disc .fp-cover::after {
 }
 .directory-row { gap: 12px; min-height: 56px; }
 .directory-icon { flex: 0 0 auto; color: var(--md-on-surface-variant); }
+.directory-row-automatic .directory-icon,
+.directory-auto-mark { color: var(--md-primary); }
+.directory-auto-mark { flex: 0 0 auto; font-size: 22px; }
 .directory-row .set-row-text strong { overflow-wrap: anywhere; }
 .directory-remove {
   display: grid;
@@ -2242,7 +2219,6 @@ main { overflow-x: clip; }
 .stagger .playlist-bar,
 .stagger .home-stats,
 .stagger .home-section,
-.stagger .library-add-button,
 .stagger .empty-state { animation: riseIn .4s var(--spring-soft) backwards; }
 
 .stagger .home-top { animation-delay: 0s; }
@@ -3122,7 +3098,6 @@ body[data-page="library"] .topbar { display: none; }
   border-radius: 3px 3px 0 0;
   background: var(--md-primary);
 }
-.library-add-button { display: none; }
 #libraryPage .filters { padding-top: 16px; }
 #libraryPage .song-list { padding-top: 8px; }
 body::before { display: none !important; }
@@ -3199,17 +3174,6 @@ body::before { display: none !important; }
   padding-bottom: 16px;
 }
 
-.library-add-button {
-  margin: 18px 16px 24px;
-  border-radius: 20px 28px 20px 28px;
-  background: var(--md-primary-container);
-  box-shadow: none;
-  transition: border-radius .35s var(--m3e-spring), transform .15s ease;
-}
-.library-add-button:active {
-  border-radius: 28px;
-  transform: scale(.97);
-}
 .empty-state button {
   border-radius: 20px 14px 20px 14px;
 }
@@ -3234,11 +3198,6 @@ body::before { display: none !important; }
   clip-path: url(#clip-scal6);
   background: var(--md-primary);
   color: var(--md-on-primary);
-}
-/* tocando: vira disco (comportamento que já existia) */
-body.is-playing .now-cover {
-  border-radius: 50%;
-  clip-path: none;
 }
 .now-play {
   background: var(--md-primary);
@@ -3431,7 +3390,7 @@ body:not(.disc) .fp-cover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .top-button, .home-settings, .library-add-button, .nav-fab, .nav-icon, .fp-play, .now-play, .filter, .swatch {
+  .top-button, .home-settings, .nav-fab, .nav-icon, .fp-play, .now-play, .filter, .swatch {
     transition: none;
   }
 }
@@ -3490,3 +3449,49 @@ body::after {
   border-radius: 14px;
 }
 .fp-chip:focus-visible { outline: 3px solid var(--md-primary); outline-offset: 2px; }
+
+/* ---------- Atualização por gesto ---------- */
+.pull-refresh-indicator {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 12px);
+  left: 0;
+  right: 0;
+  z-index: 25;
+  height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: height .34s cubic-bezier(.2, 1, .2, 1);
+}
+
+.pull-refresh-indicator.is-pulling { transition: none; }
+
+.pull-refresh-shape {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  clip-path: url(#clip-scal8);
+  background: var(--md-primary);
+  opacity: var(--pull-opacity, 0);
+  transform: rotate(var(--pull-rotation, 0deg)) scale(var(--pull-scale, .48));
+  filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--md-primary) 38%, transparent));
+  transition: background-color .45s ease, filter .45s ease;
+}
+
+.pull-refresh-indicator.is-refreshing .pull-refresh-shape {
+  opacity: 1;
+  animation: pull-refresh-spin 1.05s cubic-bezier(.45, 0, .25, 1) infinite;
+}
+
+@keyframes pull-refresh-spin {
+  0% { transform: rotate(0deg) scale(.96); }
+  45% { transform: rotate(175deg) scale(1.12); }
+  100% { transform: rotate(360deg) scale(.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pull-refresh-indicator { transition-duration: .01ms; }
+  .pull-refresh-indicator.is-refreshing .pull-refresh-shape { animation: none; }
+}

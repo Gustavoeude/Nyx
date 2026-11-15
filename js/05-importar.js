@@ -7,9 +7,6 @@ function openFilePicker() {
   fileInput.click();
 }
 
-$("addBtn").onclick = openFilePicker;
-$("libraryAdd").onclick = openFilePicker;
-
 const audioExt = /\.(mp3|m4a|m4b|aac|flac|ogg|oga|opus|wav|weba|webm|aiff|aif|alac|amr|3gp)$/i;
 const lrcExt = /\.lrc$/i;
 
@@ -639,6 +636,32 @@ function setMediaAudioExcludedFolders(folders) {
   lsSet("mediaAudioExcludedFolders", Array.from(unique.values()));
 }
 
+function setMediaAudioFoldersCache(folders) {
+  const unique = new Map();
+  (Array.isArray(folders) ? folders : []).forEach(folder => {
+    if (!folder || !folder.volumeName) return;
+    const normalized = {
+      volumeName: String(folder.volumeName),
+      relativePath: normalizeMediaAudioPath(folder.relativePath),
+      name: String(folder.name || "Pasta"),
+      count: Math.max(0, Number(folder.count) || 0)
+    };
+    unique.set(mediaAudioFolderKey(normalized), normalized);
+  });
+  lsSet("mediaAudioFoldersCache", Array.from(unique.values()));
+  lsSet("mediaAudioFoldersCacheLoaded", true);
+}
+
+function getMediaAudioFoldersCache() {
+  const saved = lsGet("mediaAudioFoldersCache", []);
+  return Array.isArray(saved) ? saved.filter(folder => folder && folder.volumeName).map(folder => ({
+    volumeName: String(folder.volumeName),
+    relativePath: normalizeMediaAudioPath(folder.relativePath),
+    name: String(folder.name || "Pasta"),
+    count: Math.max(0, Number(folder.count) || 0)
+  })) : [];
+}
+
 function mediaAudioFolderIsExcluded(folder, excluded = getMediaAudioImportExclusions()) {
   const location = mediaAudioCanonicalLocation(folder && folder.volumeName, folder && folder.relativePath);
   return excluded.some(parent => {
@@ -768,6 +791,7 @@ async function runMediaAudioSync(manual) {
   }
   const result = await MN.listMediaAudioFolders();
   const folders = Array.isArray(result && result.folders) ? result.folders : [];
+  setMediaAudioFoldersCache(folders);
   const imported = await importMediaAudioFolders(folders);
   if (manual) {
     if (imported.failed) showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");

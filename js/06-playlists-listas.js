@@ -481,8 +481,6 @@ document.querySelectorAll("#libTabs .lib-tab").forEach(b => {
   });
 });
 
-$("libraryHeadAdd").onclick = () => openFilePicker();
-
 function renderGroups(container, type) {
   const groups = buildGroups(type);
   if (!groups.length) {

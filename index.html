@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Fontes carregam em segundo plano: a página aparece na hora, mesmo com internet lenta -->
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <link rel="stylesheet" href="style.css?v=55">
+  <link rel="stylesheet" href="style.css?v=61">
   <script>
     /* Primeira instalação: esconde o app até o tutorial abrir (evita ver a tela inicial antes). */
     try {
@@ -35,17 +35,18 @@
   <input type="file" id="lrcInput" accept=".lrc,.txt,text/plain" hidden>
   <input type="file" id="coverInput" accept="image/*" hidden>
 
-  <!-- Barra superior (aparece em Search e Library) -->
+  <!-- Barra superior da tela Buscar -->
   <header class="topbar">
     <div class="top-actions">
       <button class="top-button" id="themeBtn" aria-label="Alternar tema"></button>
-      <button class="top-button" id="addBtn" aria-label="Adicionar músicas">
-        <span class="material-symbols-rounded">add</span>
-      </button>
     </div>
   </header>
 
   <main>
+    <div class="pull-refresh-indicator" id="pullRefreshIndicator" role="status" aria-live="polite" aria-atomic="true">
+      <span class="pull-refresh-shape" aria-hidden="true"></span>
+      <span class="sr-only" id="pullRefreshStatus"></span>
+    </div>
     <!-- ============ YOUR MIX ============ -->
     <section class="page active" id="homePage">
       <div class="home-top">
@@ -144,9 +145,6 @@
           <h1>Biblioteca</h1>
           <p id="libraryCount">0 músicas adicionadas</p>
         </div>
-        <button class="icon-btn home-settings" id="libraryHeadAdd" aria-label="Adicionar músicas">
-          <span class="material-symbols-rounded">add</span>
-        </button>
       </div>
 
       <div class="lib-tabs" id="libTabs" role="tablist">
@@ -160,11 +158,6 @@
       <div class="playlist-bar" id="playlistBar" hidden></div>
 
       <div class="song-list" id="songList"></div>
-
-      <button class="library-add-button" id="libraryAdd">
-        <span class="material-symbols-rounded">add</span>
-        Adicionar músicas
-      </button>
     </section>
   </main>
 
@@ -274,18 +267,18 @@
   <script src="js/01-base.js?v=49"></script>
   <script src="js/02-player-nativo.js?v=42"></script>
   <script src="js/03-estado-cor-tema.js?v=47"></script>
-  <script src="js/04-navegacao-dialogos.js?v=42"></script>
-  <script src="js/05-importar.js?v=49"></script>
-  <script src="js/06-playlists-listas.js?v=49"></script>
-  <script src="js/07-reproducao.js?v=46"></script>
+  <script src="js/04-navegacao-dialogos.js?v=46"></script>
+  <script src="js/05-importar.js?v=51"></script>
+  <script src="js/06-playlists-listas.js?v=50"></script>
+  <script src="js/07-reproducao.js?v=47"></script>
   <script src="js/08-progresso-player-completo.js?v=45"></script>
-  <script src="js/09-ajustes.js?v=53"></script>
+  <script src="js/09-ajustes.js?v=56"></script>
   <script src="js/10-fontes-letras.js?v=42"></script>
-  <script src="js/pasta-monitorada.js?v=6"></script>
-  <script src="js/12-onboarding.js?v=16"></script>
+  <script src="js/pasta-monitorada.js?v=7"></script>
+  <script src="js/12-onboarding.js?v=17"></script>
   <script src="js/13-fila-salva.js?v=2"></script>
   <script src="js/14-audio-extras.js?v=2"></script>
-  <script src="js/15-idioma.js?v=7"></script>
+  <script src="js/15-idioma.js?v=10"></script>
   <script src="js/16-widgets.js?v=2"></script>
   <script src="js/11-inicio-pwa.js?v=46"></script>
 </body>
