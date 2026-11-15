@@ -219,6 +219,7 @@ function obCommit() {
   }
 
   if (obMediaScanComplete) {
+    setMediaAudioFoldersCache(obMediaFolders);
     const currentRows = obMediaIgnoreRows();
     const currentKeys = new Set(currentRows.map(obMediaFolderIdentity));
     const retained = getMediaAudioExcludedFolders().filter(folder => !currentKeys.has(obMediaFolderIdentity(folder)));
@@ -377,7 +378,7 @@ function obSteps() {
   if (obMode === "media-manager") {
     return [{
       key: "mediaManager", title: "Pastas de áudio do aparelho", list: true,
-      text: "Marque apenas o que não deve entrar na biblioteca. As pastas não marcadas são incluídas automaticamente; excluir uma pasta também exclui suas subpastas. Músicas já importadas permanecem.",
+      text: "Marque apenas as pastas que não devem entrar na biblioteca. As demais são incluídas automaticamente. Para ignorar só uma subpasta, marque-a sem marcar a pasta principal. Marcar uma pasta também ignora suas subpastas; músicas já importadas permanecem.",
       primary: "Buscar pastas",
       busy: "Lendo os áudios…",
       run: obRequestMediaAudioAccess,
@@ -410,7 +411,7 @@ function obSteps() {
     steps.push(
       {
         key: "ignoradas", title: "Pastas ignoradas", list: true,
-        text: "Confira as pastas com áudio. Marque as que não quer na biblioteca; as demais são incluídas automaticamente. Marcar uma pasta também ignora as subpastas.",
+        text: "Confira as pastas com áudio. Marque só as que não quer na biblioteca; as demais entram automaticamente. Para ignorar apenas uma subpasta, marque-a sem marcar a pasta principal. Marcar uma pasta também ignora suas subpastas.",
         primary: "Continuar",
         skipIf: () => !obIgnoreVisible()
       },

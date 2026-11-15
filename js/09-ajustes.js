@@ -361,32 +361,120 @@ function pageAparencia(go) {
   return [wallpaperSec, sec, fontSec, shapeSec];
 }
 
-function directorySettingsGroup(title, description, folders, kind) {
+let settingsMediaFoldersLoading = false;
+let settingsMediaFoldersAttempted = false;
+let settingsMediaFoldersPromise = null;
+
+function settingsMediaAudioFolderKey(folder) {
+  const location = mediaAudioCanonicalLocation(folder && folder.volumeName, folder && folder.relativePath);
+  return location.volume + "::" + location.path;
+}
+
+function settingsWatchedAudioFolderKey(folder) {
+  const canonical = mediaAudioCanonicalFromSaf(folder && folder.uri, "");
+  const prefix = "android-audio-path::";
+  if (!canonical.startsWith(prefix)) return "";
+  const rest = canonical.slice(prefix.length);
+  const split = rest.indexOf("::");
+  if (split <= 0) return "";
+  return settingsMediaAudioFolderKey({
+    volumeName: rest.slice(0, split),
+    relativePath: rest.slice(split + 2)
+  });
+}
+
+function settingsMediaAudioFoldersForDisplay() {
+  if (!lsGet("mediaAudioEnabled", false)) return [];
+  const excluded = getMediaAudioImportExclusions();
+  const manualKeys = new Set(getWatchedFolders().map(settingsWatchedAudioFolderKey).filter(Boolean));
+  const folders = getMediaAudioFoldersCache().map(folder => {
+    const relativePath = normalizeMediaAudioPath(folder.relativePath);
+    const location = mediaAudioCanonicalLocation(folder.volumeName, relativePath);
+    return {
+      ...folder,
+      relativePath,
+      key: location.volume + "::" + location.path,
+      volumeKey: location.volume,
+      pathKey: location.path,
+      depth: relativePath && relativePath !== "/" ? relativePath.split("/").filter(Boolean).length - 1 : 0,
+      displayPath: relativePath || folder.name
+    };
+  }).filter(folder => !mediaAudioFolderIsExcluded(folder, excluded) && !manualKeys.has(folder.key));
+
+  return folders.map(folder => {
+    const total = folders.reduce((sum, child) => {
+      const inside = child.volumeKey === folder.volumeKey
+        && (!folder.pathKey || folder.pathKey === "/" || child.pathKey === folder.pathKey || child.pathKey.startsWith(folder.pathKey + "/"));
+      return sum + (inside ? Number(child.count) || 0 : 0);
+    }, 0);
+    return { ...folder, total, automatic: true };
+  }).sort((a, b) => a.volumeKey.localeCompare(b.volumeKey, "pt-BR")
+    || a.relativePath.localeCompare(b.relativePath, "pt-BR", { numeric: true }));
+}
+
+function loadSettingsMediaAudioFolders() {
+  if (settingsMediaFoldersPromise || settingsMediaFoldersAttempted || !MN || !lsGet("mediaAudioEnabled", false)
+      || lsGet("mediaAudioFoldersCacheLoaded", false)
+      || typeof MN.hasAudioLibraryAccess !== "function"
+      || typeof MN.listMediaAudioFolders !== "function") return;
+  settingsMediaFoldersAttempted = true;
+  settingsMediaFoldersLoading = true;
+  settingsMediaFoldersPromise = (async () => {
+    try {
+      const access = await MN.hasAudioLibraryAccess();
+      if (!access || !access.granted) return;
+      const result = await MN.listMediaAudioFolders();
+      setMediaAudioFoldersCache(Array.isArray(result && result.folders) ? result.folders : []);
+    } catch (error) {
+      logErr("ajustes:media-folders", error);
+    } finally {
+      settingsMediaFoldersLoading = false;
+      settingsMediaFoldersPromise = null;
+      if (settingsOpen && settingsPage === "biblioteca") refreshSettingsPage();
+    }
+  })();
+}
+
+function directorySettingsGroup(title, description, folders, kind, options = {}) {
   const sec = el("div", "set-sec directory-settings");
   const head = el("div", "directory-group-head");
   const heading = el("div", "set-row-text");
   heading.append(el("strong", "", title), el("span", "", description));
-  const add = el("button", "perm-btn directory-add-btn", "Adicionar");
+  const addLabel = kind === "watched" ? "Adicionar manualmente" : "Adicionar";
+  const add = el("button", "perm-btn directory-add-btn", addLabel);
   add.type = "button";
-  add.setAttribute("aria-label", "Adicionar " + title.toLocaleLowerCase("pt-BR"));
+  add.setAttribute("aria-label", addLabel);
   add.onclick = async () => {
     if (await addDirectory(kind)) refreshSettingsPage();
   };
   head.append(heading, add);
   sec.appendChild(head);
 
-  if (!folders.length) {
+  if (options.loading) {
+    sec.appendChild(el("div", "directory-empty", "Buscando pastas do aparelho…"));
+  } else if (!folders.length) {
     sec.appendChild(el("div", "directory-empty", kind === "ignored"
       ? "Nenhuma pasta ignorada"
-      : "Nenhuma pasta adicionada manualmente"));
+      : (options.emptyMessage || "Nenhuma pasta adicionada manualmente")));
   }
   folders.forEach(folder => {
-    const row = el("div", "set-row directory-row");
+    const automatic = !!folder.automatic;
+    const row = el("div", "set-row directory-row" + (automatic ? " directory-row-automatic" : ""));
+    if (automatic && folder.depth) row.style.paddingInlineStart = (16 + Math.min(folder.depth, 5) * 12) + "px";
     row.appendChild(el("span", "material-symbols-rounded directory-icon", "folder"));
     const text = el("div", "set-row-text");
-    text.append(el("strong", "", folder.name), el("span", "", kind === "ignored"
-      ? "Ignorado nas novas varreduras; músicas já adicionadas permanecem"
-      : "Verificado automaticamente em busca de músicas novas"));
+    const name = automatic ? (folder.displayPath || folder.name) : folder.name;
+    const subtitle = automatic
+      ? "Incluída automaticamente · " + folder.total + " " + (folder.total === 1 ? "áudio" : "áudios")
+      : kind === "ignored" ? "Ignorado nas novas varreduras; músicas já adicionadas permanecem" : "Escolhida manualmente";
+    text.append(el("strong", "", name), el("span", "", subtitle));
+    if (automatic) {
+      const included = el("span", "material-symbols-rounded directory-auto-mark", "check_circle");
+      included.setAttribute("aria-label", "Incluída automaticamente");
+      row.append(text, included);
+      sec.appendChild(row);
+      return;
+    }
     const remove = el("button", "directory-remove", "");
     remove.type = "button";
     remove.setAttribute("aria-label", "Remover " + folder.name);
@@ -404,18 +492,27 @@ function directorySettingsGroup(title, description, folders, kind) {
 function pageBiblioteca() {
   const out = [];
   if (MN && typeof addDirectory === "function") {
+    loadSettingsMediaAudioFolders();
+    const automaticFolders = settingsMediaAudioFoldersForDisplay();
+    const manualFolders = getWatchedFolders().map(folder => ({ ...folder, automatic: false }));
+    const emptyMessage = !lsGet("mediaAudioEnabled", false)
+      ? "Permita o acesso aos áudios do aparelho abaixo para listar as pastas automaticamente."
+      : lsGet("mediaAudioFoldersCacheLoaded", false)
+        ? "Nenhuma pasta com áudio foi encontrada."
+        : "Abra Pastas de áudio do aparelho para carregar a lista.";
     out.push(directorySettingsGroup(
-      "Pastas escolhidas manualmente",
-      "Pastas adicionadas aqui são opcionais; as demais com áudio são gerenciadas abaixo.",
-      getWatchedFolders(),
-      "watched"
+      "Pastas monitoradas",
+      "As pastas não ignoradas entram automaticamente.",
+      automaticFolders.concat(manualFolders),
+      "watched",
+      { loading: settingsMediaFoldersLoading, emptyMessage }
     ));
     if (typeof openMediaAudioManager === "function") {
       const mediaSec = el("div", "set-sec");
       const mediaRow = el("button", "set-row");
       const mediaText = el("div", "set-row-text");
       mediaText.append(el("strong", "", "Pastas de áudio do aparelho"), el("span", "",
-        "As pastas não marcadas são incluídas automaticamente. Marque apenas as que quer ignorar."));
+        "As pastas não marcadas entram automaticamente. Abra para ignorar uma pasta ou subpasta."));
       mediaRow.append(mediaText, el("span", "material-symbols-rounded", "folder"));
       mediaRow.onclick = openMediaAudioManager;
       mediaSec.appendChild(mediaRow);
@@ -424,7 +521,10 @@ function pageBiblioteca() {
         const refreshText = el("div", "set-row-text");
         refreshText.append(el("strong", "", "Atualizar biblioteca do aparelho"), el("span", "", "Procura músicas novas no aparelho; as já importadas permanecem."));
         refreshRow.append(refreshText, el("span", "material-symbols-rounded", "refresh"));
-        refreshRow.onclick = () => syncMediaAudioLibrary(true);
+        refreshRow.onclick = async () => {
+          await syncMediaAudioLibrary(true);
+          if (settingsPage === "biblioteca") refreshSettingsPage();
+        };
         mediaSec.appendChild(refreshRow);
       }
       out.push(mediaSec);
@@ -611,6 +711,7 @@ function settingsGo(p, fromPop) {
       }
     } catch (e) { logErr("ajustes:nav", e); }
   }
+  if (p === "biblioteca") settingsMediaFoldersAttempted = false;
   settingsPage = p;
   renderSettingsPage(settingsEl, settingsGo);
   settingsEl.scrollTop = 0;
@@ -632,6 +733,7 @@ function openSettings(page) {
     document.body.appendChild(settingsEl);
   }
   settingsPage = typeof page === "string" ? page : null;
+  if (settingsPage === "biblioteca") settingsMediaFoldersAttempted = false;
   renderSettingsPage(settingsEl, settingsGo);
   settingsEl.scrollTop = 0;
 

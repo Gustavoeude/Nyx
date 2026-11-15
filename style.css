@@ -1972,6 +1972,9 @@ body.disc .fp-cover::after {
 }
 .directory-row { gap: 12px; min-height: 56px; }
 .directory-icon { flex: 0 0 auto; color: var(--md-on-surface-variant); }
+.directory-row-automatic .directory-icon,
+.directory-auto-mark { color: var(--md-primary); }
+.directory-auto-mark { flex: 0 0 auto; font-size: 22px; }
 .directory-row .set-row-text strong { overflow-wrap: anywhere; }
 .directory-remove {
   display: grid;
