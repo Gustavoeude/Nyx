@@ -29,18 +29,6 @@ function obHasNative() {
 
 const obSleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Espera as músicas escolhidas pelo seletor de arquivos terminarem de entrar na biblioteca.
-async function obWatchSongs(before) {
-  let last = songs.length;
-  let stable = 0;
-  for (let i = 0; i < 240 && obRoot; i++) { // até ~2 min
-    await obSleep(500);
-    if (songs.length !== last) { last = songs.length; stable = 0; }
-    else if (last > before && ++stable >= 3) break;
-  }
-  return songs.length - before;
-}
-
 function obPlural(n, um, varios) { return n + " " + (n === 1 ? um : varios); }
 
 // ---------- pasta de músicas (Android) ----------
@@ -303,10 +291,7 @@ function obSteps() {
 
 // Navegador (PWA): sem pasta monitorada, só arquivos.
 async function obPickWeb() {
-  const before = songs.length;
-  openFilePicker();
-  const added = await obWatchSongs(before);
-  return added > 0 ? { label: "Arquivos adicionados", sub: obPlural(added, "música adicionada", "músicas adicionadas") } : null;
+  return obPickFiles();
 }
 
 // Abre o seletor de arquivos e descobre se a pessoa escolheu algo ou cancelou
@@ -343,8 +328,12 @@ function obFilePickerOutcome() {
 async function obPickFiles() {
   const before = songs.length;
   if (!(await obFilePickerOutcome())) return null;
-  const added = await obWatchSongs(before);
-  return added > 0 ? { label: "Arquivos adicionados", sub: obPlural(added, "música adicionada", "músicas adicionadas") } : null;
+  await fileImportTask;
+  const added = songs.length - before;
+  if (added > 0) {
+    return { label: "Arquivos adicionados", sub: obPlural(added, "música adicionada", "músicas adicionadas") };
+  }
+  return { label: "Nenhuma música nova adicionada", sub: "Selecione arquivos de áudio para continuar.", warn: true, retry: true };
 }
 
 let obRoot = null;

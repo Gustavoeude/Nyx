@@ -484,8 +484,9 @@ async function importFiles(list, origem) {
   }
 }
 
+let fileImportTask = Promise.resolve();
 fileInput.addEventListener("change", () => {
-  importFiles(fileInput.files);
+  fileImportTask = importFiles(fileInput.files);
   fileInput.value = "";
 });
 
