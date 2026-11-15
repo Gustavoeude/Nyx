@@ -54,7 +54,9 @@ loadCustomFonts();
 $("homePage").classList.add("stagger");
 setTimeout(() => $("homePage").classList.remove("stagger"), 1100);
 
-loadSongs().then(async () => {
+const songsReady = loadSongs();
+window.nyxSongsReady = songsReady;
+songsReady.then(async () => {
   // se o player nativo já estava tocando, acompanha; senão, volta para onde você parou
   if (nativeMode) { try { await nativeResync(true); } catch (e) { logErr("inicio:resync", e); } }
   if (currentId === null && typeof restoreSavedQueue === "function") await restoreSavedQueue();
