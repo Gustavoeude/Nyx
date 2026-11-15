@@ -338,8 +338,9 @@ public class MusicaPlugin extends Plugin {
     public void widgetInfo(PluginCall call) {
         try {
             String colors = call.getString("colors", "");
-            NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false), colors);
+            boolean refreshed = NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false), colors);
             if (colors != null && !colors.isEmpty()) {
+                if (!refreshed) throw new IllegalStateException("não foi possível redesenhar os widgets");
                 String savedColors = getContext().getSharedPreferences(NyxWidgets.PREFS, Context.MODE_PRIVATE)
                         .getString("colors", "");
                 if (!colors.equals(savedColors)) {
