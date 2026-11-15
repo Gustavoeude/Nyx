@@ -40,6 +40,11 @@ const obIgnoreSel = new Set();
 const obIgnoreSeen = new Set();
 let obStatus = null;        // { baseline, expected, done, timer }
 let obCommitted = false;
+let obMediaFolders = [];
+let obMediaScanComplete = false;
+const obMediaIgnoreSel = new Set();
+const obMediaIgnoreSeen = new Set();
+let obMode = "onboarding";
 
 const obIsLrc = f => /\.lrc$/i.test((f && f.name) || "");
 const obRel = f => String((f && f.relativePath) || "").replace(/\\/g, "/");
@@ -71,7 +76,87 @@ function obIgnoreRows() {
   return rows;
 }
 
-function obIgnoreVisible() { return obHasNative() && obIgnoreRows().length > 0; }
+function obIgnoreVisible() { return obHasNative() && obAllIgnoreRows(); }
+
+function obMediaIgnoreRows() {
+  const savedFolders = getMediaAudioExcludedFolders();
+  const saved = new Set(savedFolders.map(mediaAudioFolderKey));
+  const folders = obMediaFolders.map(folder => ({
+    ...folder,
+    volumeName: String(folder.volumeName || ""),
+    relativePath: normalizeMediaAudioPath(folder.relativePath),
+    key: mediaAudioFolderKey(folder)
+  }));
+  const scanned = new Set(folders.map(folder => folder.key));
+  savedFolders.forEach(folder => {
+    const key = mediaAudioFolderKey(folder);
+    if (scanned.has(key)) return;
+    folders.push({ ...folder, key, count: 0, stale: true });
+  });
+  folders.forEach(folder => {
+    if (obMediaIgnoreSeen.has(folder.key)) return;
+    obMediaIgnoreSeen.add(folder.key);
+    if (saved.has(folder.key)) obMediaIgnoreSel.add(folder.key);
+  });
+  return folders.map(folder => {
+    const path = folder.relativePath;
+    const total = folders.reduce((sum, child) => {
+      const childPath = child.relativePath;
+      const inside = child.volumeName === folder.volumeName
+        && (!path || path === "/" || childPath === path || childPath.startsWith(path + "/"));
+      return sum + (inside ? Number(child.count) || 0 : 0);
+    }, 0);
+    const parentExcluded = folders.some(parent => parent.key !== folder.key
+      && obMediaIgnoreSel.has(parent.key)
+      && parent.volumeName === folder.volumeName
+      && (!parent.relativePath || parent.relativePath === "/" || path.startsWith(parent.relativePath + "/")));
+    const primaryAbsolute = path.match(/^\/storage\/(?:emulated\/0|self\/primary)\/?(.*)$/i);
+    const externalAbsolute = path.match(/^\/storage\/([^/]+)\/?(.*)$/i);
+    const isInternal = /primary/i.test(folder.volumeName)
+      || (folder.volumeName === "external" && (!path || path === "/" || !!primaryAbsolute));
+    const depth = path && path !== "/" ? path.split("/").filter(Boolean).length - 1 : 0;
+    let displayPath;
+    if (!path || path === "/") displayPath = isInternal ? "Raiz do armazenamento interno" : "Raiz do armazenamento externo";
+    else if (primaryAbsolute) displayPath = "Interno · " + (primaryAbsolute[1] || "Raiz");
+    else if (externalAbsolute) displayPath = "Externo · " + (externalAbsolute[2] || "Raiz");
+    else displayPath = isInternal ? path : "Externo · " + path;
+    return { ...folder, total, depth, displayPath, parentExcluded };
+  }).sort((a, b) => a.volumeName.localeCompare(b.volumeName, "pt-BR")
+    || a.relativePath.localeCompare(b.relativePath, "pt-BR", { numeric: true }));
+}
+
+function obAllIgnoreRows() {
+  return obIgnoreRows().length > 0 || obMediaFolders.length > 0;
+}
+
+async function obRequestMediaAudioAccess() {
+  if (!MN || typeof MN.requestAudioLibraryAccess !== "function"
+      || typeof MN.listMediaAudioFolders !== "function") {
+    return { label: "Busca do aparelho indisponível", sub: "Escolha uma pasta manualmente para importar músicas.", warn: true };
+  }
+  try {
+    const access = await MN.requestAudioLibraryAccess();
+    if (!access || !access.granted) {
+      return { label: "Permissão não concedida", sub: "Você pode tentar de novo ou escolher uma pasta manualmente.", warn: true };
+    }
+    const result = await MN.listMediaAudioFolders();
+    obMediaFolders = Array.isArray(result && result.folders) ? result.folders : [];
+    obMediaScanComplete = true;
+    obMediaIgnoreSel.clear();
+    obMediaIgnoreSeen.clear();
+    obMediaIgnoreRows();
+    obCommitted = false;
+    const count = obMediaFolders.reduce((sum, folder) => sum + (Number(folder.count) || 0), 0);
+    if (!count) {
+      return { label: "Nenhum áudio encontrado", sub: "Você ainda pode escolher uma pasta manualmente.", warn: true };
+    }
+    return { label: "Áudios encontrados", sub: obPlural(obMediaFolders.length, "pasta", "pastas")
+      + " · " + obPlural(count, "áudio", "áudios") };
+  } catch (error) {
+    logErr("onboarding:media-scan", error);
+    return { label: "Não foi possível ler os áudios", sub: "Confira a permissão do Android ou escolha uma pasta manualmente.", warn: true };
+  }
+}
 
 async function obPickFolder() {
   const selected = await MN.pickFolder();
@@ -97,28 +182,48 @@ async function obPickFolder() {
 
 // Registra as pastas em "Lista de Diretórios", grava as ignoradas e importa as músicas.
 function obCommit() {
-  if (obCommitted || !obChosen.length) return;
+  if (obCommitted) return;
+  if (obMode !== "media-manager" && !obChosen.length && !obMediaFolders.length && !obMediaScanComplete) return;
   obCommitted = true;
-  const rows = obIgnoreRows();
+  const rows = obChosen.length ? obIgnoreRows() : [];
   const rowUris = new Set(rows.map(r => r.uri));
   const picked = rows.filter(r => obIgnoreSel.has(r.uri));
 
-  const ignored = getIgnoredFolders().filter(f => !rowUris.has(f.uri));
-  picked.forEach(r => ignored.push({ uri: r.uri, name: r.name }));
-  setDirectories("ignored", ignored);
+  if (obChosen.length) {
+    const ignored = getIgnoredFolders().filter(f => !rowUris.has(f.uri));
+    picked.forEach(r => ignored.push({ uri: r.uri, name: r.name }));
+    setDirectories("ignored", ignored);
 
-  const watched = getWatchedFolders();
-  obChosen.forEach(f => { if (!watched.some(w => w.uri === f.uri)) watched.push({ uri: f.uri, name: f.name }); });
-  setDirectories("watched", watched);
+    const watched = getWatchedFolders();
+    obChosen.forEach(f => { if (!watched.some(w => w.uri === f.uri)) watched.push({ uri: f.uri, name: f.name }); });
+    setDirectories("watched", watched);
+  }
 
-  // quantas músicas devem entrar (para o indicador de progresso)
+  if (obMediaScanComplete || obMode === "media-manager") {
+    const currentRows = obMediaIgnoreRows();
+    const currentKeys = new Set(currentRows.map(mediaAudioFolderKey));
+    const retained = getMediaAudioExcludedFolders().filter(folder => !currentKeys.has(mediaAudioFolderKey(folder)));
+    const selected = currentRows.filter(folder => obMediaIgnoreSel.has(mediaAudioFolderKey(folder)))
+      .map(folder => ({ volumeName: folder.volumeName, relativePath: folder.relativePath, name: folder.name }));
+    setMediaAudioExcludedFolders(retained.concat(selected));
+    if (obMediaScanComplete) lsSet("mediaAudioEnabled", true);
+  }
+
+  if (obMode === "media-manager") {
+    if (obMediaScanComplete) syncMediaAudioLibrary(true);
+    return;
+  }
+
+  // Importa apenas depois de aplicar as exclusões, somando o fluxo novo e o SAF manual.
+  const excludedMedia = getMediaAudioImportExclusions();
+  const mediaToImport = obMediaFolders.filter(folder => !mediaAudioFolderIsExcluded(folder, excludedMedia));
   const skipPrefixes = picked.map(r => r.path);
   const skipPathsByUri = new Map();
   picked.forEach(r => {
     if (!skipPathsByUri.has(r.rootUri)) skipPathsByUri.set(r.rootUri, []);
     skipPathsByUri.get(r.rootUri).push(r.rel);
   });
-  let expected = 0;
+  let expected = mediaToImport.reduce((sum, folder) => sum + (Number(folder.count) || 0), 0);
   obScan.forEach(sc => {
     expected += sc.files.filter(f => {
       if (obIsLrc(f)) return false;
@@ -132,7 +237,16 @@ function obCommit() {
   const st = obStatus;
   st.timer = setInterval(obUpdateStatus, 400);
   obUpdateStatus();
-  syncWatchedFolder(true, { cachedListings: obScan, skipPathsByUri }).catch(e => logErr("onboarding:sync", e)).finally(() => {
+  const tasks = [];
+  if (obChosen.length) tasks.push(syncWatchedFolder(true, { cachedListings: obScan, skipPathsByUri }));
+  if (mediaToImport.length) tasks.push(importMediaAudioFolders(mediaToImport, {
+    excludedFolders: excludedMedia,
+    onProgress: () => obUpdateStatus()
+  }).catch(e => {
+    logErr("onboarding:media-import", e);
+    showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
+  }));
+  Promise.allSettled(tasks).finally(() => {
     st.done = true;
     obUpdateStatus();
     setTimeout(() => { if (obStatus === st) { clearInterval(st.timer); obStatus = null; obUpdateStatus(); } }, 3500);
@@ -212,7 +326,7 @@ function obExtra(step) {
     box.appendChild(chips);
   } else if (step.key === "musicas") {
     const tip = el("div", "ob-tip");
-    tip.innerHTML = obIcon("info") + "<span>Escolha a pasta principal. O Nyx encontra as subpastas sozinho. Você pode adicionar mais de uma pasta e mudar isso depois em Ajustes.</span>";
+    tip.innerHTML = obIcon("info") + "<span>Com a permissão, o Nyx procura áudios no aparelho. Se preferir, escolha uma pasta manualmente.</span>";
     box.appendChild(tip);
   } else if (step.key === "avisos") {
     const lock = el("div", "ob-lock");
@@ -233,28 +347,46 @@ function obExtra(step) {
 // Passos: cada um diz o que mostra e o que o botão principal faz.
 function obSteps() {
   const native = obHasNative();
-  const steps = [
-    {
-      key: "welcome", title: "Bem-vindo ao Nyx", app: true, shape: [8, 0.07],
-      text: "Vamos deixar tudo pronto para você. Leva menos de um minuto.",
-      primary: "Vamos lá"
-    },
-    {
+  if (obMode === "media-manager") {
+    return [{
+      key: "mediaManager", title: "Pastas de áudio do aparelho", list: true,
+      text: "Marque o que não deve entrar na biblioteca. Excluir uma pasta também exclui suas subpastas; músicas já importadas permanecem.",
+      primary: "Buscar pastas",
+      busy: "Lendo os áudios…",
+      run: obRequestMediaAudioAccess,
+      again: "Atualizar lista",
+      againRun: obRequestMediaAudioAccess
+    }];
+  }
+  const steps = [];
+  steps.push({
+    key: "welcome", title: "Bem-vindo ao Nyx", app: true, shape: [8, 0.07],
+    text: "Vamos deixar tudo pronto para você. Leva menos de um minuto.",
+    primary: "Vamos lá"
+  });
+  steps.push({
       key: "musicas", title: "Suas músicas", icon: "library_music", shape: [6, 0.1],
       text: native
-        ? "Escolha a pasta onde ficam suas músicas. O Nyx guarda essa pasta em Ajustes > Biblioteca e importa tudo dela."
+        ? "Permita que o Nyx encontre áudios em todas as pastas do aparelho. Depois você escolhe o que quer ignorar."
         : "Escolha arquivos de áudio ou uma pasta para montar sua biblioteca. O app só recebe o que você selecionar.",
-      primary: native ? "Escolher pasta" : "Escolher arquivos",
-      busy: native ? "Lendo a pasta…" : "Importando…",
-      secondary: native ? "Escolher arquivos" : "",
-      again: native ? "Adicionar outra pasta" : "Escolher mais arquivos",
-      run: native ? obPickFolder : obPickWeb,
-      runSecondary: obPickFiles,
+      primary: native ? "Permitir acesso aos áudios" : "Escolher arquivos",
+      busy: native ? "Procurando áudios…" : "Importando…",
+      secondary: native ? "Escolher pasta manualmente" : "",
+      secondaryAlways: native,
+      again: native ? "Buscar novamente" : "Escolher mais arquivos",
+      againRun: native ? obRequestMediaAudioAccess : obPickFiles,
+      run: native ? obRequestMediaAudioAccess : obPickWeb,
+      runSecondary: native ? obPickFolder : obPickFiles,
       orbit: ["folder", "music_note", "playlist_add"]
-    }
-  ];
+  });
   if (native) {
     steps.push(
+      {
+        key: "ignoradas", title: "Pastas ignoradas", list: true,
+        text: "Confira as pastas que têm áudio. Marque as que não quer na biblioteca; subpastas também serão ignoradas.",
+        primary: "Continuar",
+        skipIf: () => !obIgnoreVisible()
+      },
       {
         key: "avisos", title: "Notificações", icon: "notifications", shape: [10, 0.06],
         text: "Ative as notificações para controlar a música pela tela de bloqueio e pela barra de notificações.",
@@ -269,13 +401,6 @@ function obSteps() {
         },
         orbit: ["skip_next", "pause", "skip_previous"]
       },
-      {
-        // só aparece se a pasta escolhida tem subpastas com música
-        key: "ignoradas", title: "Pastas ignoradas", list: true,
-        text: "Tudo é importado por padrão. Toque nas pastas que você não quer na biblioteca, como toques e sons de apps.",
-        primary: "Continuar",
-        skipIf: () => !obIgnoreVisible()
-      }
     );
     if (typeof MN.requestBatteryExemption === "function") {
       steps.push({
@@ -360,8 +485,11 @@ function obRefreshList() {
 
 function obFinish() {
   obCommit(); // "Pular tudo" também registra a pasta escolhida
-  lsSet(OB_KEY, true);
-  lsSet("permsAsked", true); // a folha antiga de importação não precisa aparecer depois
+  if (obMode === "media-manager" && typeof refreshSettingsPage === "function") refreshSettingsPage();
+  if (obMode !== "media-manager") {
+    lsSet(OB_KEY, true);
+    lsSet("permsAsked", true); // a folha antiga de importação não precisa aparecer depois
+  }
   document.documentElement.classList.remove("ob-pending");
   if (!obRoot) return;
   const root = obRoot;
@@ -400,15 +528,55 @@ function obResultCard(res) {
 // Lista de pastas com caixas de marcação (passo "Pastas ignoradas").
 function obFolderList() {
   const wrap = el("div", "ob-folders");
-  const rows = obIgnoreRows();
+  const safRows = obMode === "media-manager" ? [] : obIgnoreRows();
+  const mediaRows = obMediaIgnoreRows();
   const hint = el("p", "ob-hint");
+  const mediaNodes = new Map();
   const refresh = () => {
-    const n = rows.filter(r => obIgnoreSel.has(r.uri)).length;
+    const n = obIgnoreSel.size + obMediaIgnoreSel.size;
     hint.textContent = n
-      ? obPlural(n, "pasta marcada", "pastas marcadas") + ". As músicas dela não entram na biblioteca."
-      : "Nenhuma pasta marcada. Tudo será importado.";
+      ? obPlural(n, "pasta marcada", "pastas marcadas") + ". O conteúdo delas não será importado."
+      : "Nenhuma pasta marcada. Todos os áudios encontrados serão incluídos.";
+    const states = new Map(obMediaIgnoreRows().map(folder => [folder.key, folder]));
+    mediaRows.forEach(folder => {
+      const ref = mediaNodes.get(folder.key);
+      if (!ref) return;
+      const state = states.get(folder.key);
+      const checked = obMediaIgnoreSel.has(folder.key) || !!(state && state.parentExcluded);
+      ref.row.classList.toggle("on", checked);
+      ref.row.disabled = !!(state && state.parentExcluded);
+      ref.row.setAttribute("aria-checked", checked ? "true" : "false");
+    });
   };
-  rows.forEach(r => {
+  if (mediaRows.length) wrap.appendChild(el("div", "ob-list-heading", "Pastas com áudio do aparelho"));
+  mediaRows.forEach(folder => {
+    const checked = obMediaIgnoreSel.has(folder.key) || folder.parentExcluded;
+    const row = el("button", "ob-frow ob-media-row" + (checked ? " on" : ""));
+    row.setAttribute("role", "checkbox");
+    row.setAttribute("aria-checked", checked ? "true" : "false");
+    row.disabled = folder.parentExcluded;
+    row.style.paddingInlineStart = (14 + Math.min(folder.depth, 5) * 14) + "px";
+    const ic = el("span", "ob-fic");
+    ic.innerHTML = obIcon("folder");
+    const tx = el("span", "ob-ftx");
+    tx.append(el("strong", "", folder.name || folder.displayPath.split("/").pop()));
+    tx.append(el("small", "", folder.displayPath));
+    const chip = el("span", "ob-fcount", obPlural(folder.total, "áudio", "áudios"));
+    const box = el("span", "ob-fbox");
+    box.innerHTML = obIcon("check");
+    row.append(ic, tx, chip, box);
+    row.onclick = () => {
+      if (folder.parentExcluded) return;
+      if (obMediaIgnoreSel.has(folder.key)) obMediaIgnoreSel.delete(folder.key);
+      else obMediaIgnoreSel.add(folder.key);
+      obCommitted = false;
+      refresh();
+    };
+    mediaNodes.set(folder.key, { row });
+    wrap.appendChild(row);
+  });
+  if (safRows.length) wrap.appendChild(el("div", "ob-list-heading", "Subpastas da pasta escolhida manualmente"));
+  safRows.forEach(r => {
     const row = el("button", "ob-frow" + (obIgnoreSel.has(r.uri) ? " on" : ""));
     row.setAttribute("role", "checkbox");
     row.setAttribute("aria-checked", obIgnoreSel.has(r.uri) ? "true" : "false");
@@ -532,8 +700,9 @@ function obRender() {
   const links = el("div", "ob-links");
   if (step.run && done && step.again) {
     const again = el("button", "ob-link");
-    again.innerHTML = obIcon("add") + "<span>" + step.again + "</span>";
-    again.onclick = () => exec(step.run, main2, step.busy);
+    const againLabel = typeof step.again === "function" ? step.again() : step.again;
+    again.innerHTML = obIcon("add") + "<span>" + againLabel + "</span>";
+    again.onclick = () => exec(step.againRun || step.run, main2, step.busy);
     links.appendChild(again);
   }
   if (step.skippable && !done) {
@@ -558,7 +727,7 @@ function obRender() {
     if (!step.run || done) advance();
     else exec(step.run, main2, step.busy);
   };
-  if (step.secondary && !done) {
+  if (step.secondary && (!done || step.secondaryAlways)) {
     // dois botões conectados: pasta | arquivos soltos
     const group = el("div", "ob-group");
     const sec = el("button", "ob-sec");
@@ -570,8 +739,9 @@ function obRender() {
   foot.appendChild(row);
 }
 
-function startOnboarding(instant) {
+function startOnboarding(instant, mode = "onboarding") {
   if (obRoot) return;
+  obMode = mode;
   obAll = obSteps();
   obIndex = 0;
   obDir = 1;
@@ -584,17 +754,20 @@ function startOnboarding(instant) {
   obScan.clear();
   obIgnoreSel.clear();
   obIgnoreSeen.clear();
+  obMediaFolders = [];
+  obMediaIgnoreSel.clear();
+  obMediaIgnoreSeen.clear();
   obRefreshList();
 
   const root = el("div", "ob");
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-modal", "true");
-  root.setAttribute("aria-label", "Configuração inicial do Nyx");
+  root.setAttribute("aria-label", obMode === "media-manager" ? "Gerenciar pastas de áudio" : "Configuração inicial do Nyx");
 
   const top = el("div", "ob-top");
   const dots = el("div", "ob-dots");
   const count = el("span", "ob-count");
-  const skipAll = el("button", "ob-skipall", "Pular tudo");
+  const skipAll = el("button", "ob-skipall", obMode === "media-manager" ? "Fechar" : "Pular tudo");
   skipAll.onclick = obFinish;
   top.append(dots, count, skipAll);
 
@@ -606,6 +779,14 @@ function startOnboarding(instant) {
   obRoot = root;
   obRender();
   if (!instant) requestAnimationFrame(() => root.classList.add("show"));
+}
+
+function openMediaAudioManager() {
+  if (!obHasNative()) {
+    showToast("O gerenciamento da biblioteca do aparelho só funciona no Android.");
+    return;
+  }
+  startOnboarding(true, "media-manager");
 }
 
 // Chamado ao terminar de carregar as músicas.

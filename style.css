@@ -2726,12 +2726,15 @@ html.ob-pending body > *:not(.ob):not(script):not(link) { visibility: hidden; }
 /* ---- lista de pastas para ignorar (estilo lista de pastas do PixelPlayer) ---- */
 .ob-folders { flex: 1; min-height: 0; overflow-y: auto; margin-top: 16px; display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
 .ob-stage.ob-in .ob-folders { animation: ob-rise .6s var(--ease) .15s both; }
+.ob-list-heading { margin: 8px 4px 0; color: var(--ob-dim); font-size: 13px; font-weight: 600; }
 .ob-frow {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; color: inherit;
   padding: 12px 14px; border-radius: 18px; background: var(--ob-card); border: 1px solid transparent; cursor: pointer;
   transition: background .2s ease, border-color .2s ease, transform .15s var(--ease);
 }
 .ob-frow:active { transform: scale(.985); }
+.ob-frow:disabled { opacity: .72; cursor: default; }
+.ob-frow:disabled:active { transform: none; }
 .ob-frow.on { background: var(--ob-card-2); border-color: var(--ob-fg); }
 .ob-fic { flex: none; display: flex; color: var(--ob-dim); }
 .ob-ftx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

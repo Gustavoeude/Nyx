@@ -9,8 +9,10 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
+import android.content.ContentUris;
 import android.provider.Settings;
 import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.annotation.ActivityCallback;
@@ -24,8 +26,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import android.util.Base64;
@@ -42,7 +48,9 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 /** Ponte entre o JavaScript do app e o serviço de reprodução em segundo plano. */
 @CapacitorPlugin(name = "MusicaNative", permissions = {
-        @Permission(alias = "notifications", strings = {Manifest.permission.POST_NOTIFICATIONS})
+        @Permission(alias = "notifications", strings = {Manifest.permission.POST_NOTIFICATIONS}),
+        @Permission(alias = "audioLibrary", strings = {Manifest.permission.READ_MEDIA_AUDIO}),
+        @Permission(alias = "legacyAudioLibrary", strings = {Manifest.permission.READ_EXTERNAL_STORAGE})
 })
 public class MusicaPlugin extends Plugin {
 
@@ -415,6 +423,347 @@ public class MusicaPlugin extends Plugin {
         result.put("granted", Build.VERSION.SDK_INT < 33
                 || getPermissionState("notifications") == PermissionState.GRANTED);
         call.resolve(result);
+    }
+
+    // ================= biblioteca de áudio do MediaStore =================
+    private static final int MEDIA_AUDIO_PAGE_MAX = 100;
+    private static final int MEDIA_AUDIO_PAGE_DEFAULT = 50;
+    private static final String LEGACY_AUDIO_VOLUME = "external";
+
+    private String audioLibraryPermissionName() {
+        if (Build.VERSION.SDK_INT >= 33) return Manifest.permission.READ_MEDIA_AUDIO;
+        return Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    private boolean hasAudioLibraryPermission() {
+        return Build.VERSION.SDK_INT < 23 || ContextCompat.checkSelfPermission(
+                getContext(), audioLibraryPermissionName()) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requireAudioLibraryPermission() {
+        if (!hasAudioLibraryPermission()) {
+            throw new SecurityException("Audio library permission is denied or was revoked; grant access and retry");
+        }
+    }
+
+    @PluginMethod
+    public void requestAudioLibraryAccess(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 23 || hasAudioLibraryPermission()) {
+            resolveAudioLibraryPermission(call);
+            return;
+        }
+        String alias = Build.VERSION.SDK_INT >= 33 ? "audioLibrary" : "legacyAudioLibrary";
+        requestPermissionForAlias(alias, call, "audioLibraryPermissionResult");
+    }
+
+    @PermissionCallback
+    private void audioLibraryPermissionResult(PluginCall call) {
+        resolveAudioLibraryPermission(call);
+    }
+
+    private void resolveAudioLibraryPermission(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("granted", hasAudioLibraryPermission());
+        result.put("permission", Build.VERSION.SDK_INT < 23 ? "none" : audioLibraryPermissionName());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void hasAudioLibraryAccess(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("granted", hasAudioLibraryPermission());
+        call.resolve(result);
+    }
+
+    private static final class AudioFolderAggregate {
+        final String volumeName;
+        final String relativePath;
+        final String name;
+        int count;
+
+        AudioFolderAggregate(String volumeName, String relativePath, String name) {
+            this.volumeName = volumeName;
+            this.relativePath = relativePath;
+            this.name = name;
+        }
+    }
+
+    @PluginMethod
+    public void listMediaAudioFolders(PluginCall call) {
+        try {
+            requireAudioLibraryPermission();
+            Map<String, AudioFolderAggregate> groups = new HashMap<>();
+            if (Build.VERSION.SDK_INT >= 29) {
+                Set<String> volumes = MediaStore.getExternalVolumeNames(getContext());
+                if (volumes == null) throw new java.io.IOException("MediaStore returned no external volumes");
+                List<String> sortedVolumes = new ArrayList<>(volumes);
+                Collections.sort(sortedVolumes);
+                for (String volume : sortedVolumes) {
+                    if (volume == null || volume.isEmpty()) continue;
+                    Uri collection = MediaStore.Audio.Media.getContentUri(volume);
+                    String[] columns = {
+                            MediaStore.Audio.Media.RELATIVE_PATH,
+                            MediaStore.Audio.Media.VOLUME_NAME
+                    };
+                    try (Cursor cursor = getContext().getContentResolver().query(
+                            collection, columns, null, null, null)) {
+                        if (cursor == null) throw new java.io.IOException("MediaStore returned a null cursor for volume " + volume);
+                        int pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH);
+                        int volumeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.VOLUME_NAME);
+                        while (cursor.moveToNext()) {
+                            String rowVolume = cursor.isNull(volumeColumn) ? volume : cursor.getString(volumeColumn);
+                            if (!volume.equals(rowVolume)) continue;
+                            String relativePath = normalizeRelativePath(
+                                    cursor.isNull(pathColumn) ? "" : cursor.getString(pathColumn));
+                            addAudioFolder(groups, volume, relativePath);
+                        }
+                    }
+                }
+            } else {
+                Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                String[] columns = {MediaStore.Audio.Media.DATA};
+                try (Cursor cursor = getContext().getContentResolver().query(
+                        collection, columns, null, null, null)) {
+                    if (cursor == null) throw new java.io.IOException("MediaStore returned a null cursor for external audio");
+                    int dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA);
+                    while (cursor.moveToNext()) {
+                        String parent = cursor.isNull(dataColumn) ? "" : legacyParentPath(cursor.getString(dataColumn));
+                        addAudioFolder(groups, LEGACY_AUDIO_VOLUME, parent);
+                    }
+                }
+            }
+
+            List<AudioFolderAggregate> folders = new ArrayList<>(groups.values());
+            folders.sort(Comparator.comparing((AudioFolderAggregate f) -> f.volumeName)
+                    .thenComparing(f -> f.relativePath));
+            JSArray resultFolders = new JSArray();
+            for (AudioFolderAggregate folder : folders) {
+                JSObject item = new JSObject();
+                item.put("volumeName", folder.volumeName);
+                item.put("relativePath", folder.relativePath);
+                item.put("name", folder.name);
+                item.put("count", folder.count);
+                item.put("key", audioFolderKey(folder.volumeName, folder.relativePath));
+                resultFolders.put(item);
+            }
+            JSObject response = new JSObject();
+            response.put("folders", resultFolders);
+            call.resolve(response);
+        } catch (SecurityException e) {
+            call.reject("Audio library access denied or revoked: " + e.getMessage());
+        } catch (Exception e) {
+            call.reject("Could not list MediaStore audio folders: " + e.getMessage());
+        }
+    }
+
+    private void addAudioFolder(Map<String, AudioFolderAggregate> groups, String volume, String path) {
+        String key = audioFolderKey(volume, path);
+        AudioFolderAggregate folder = groups.get(key);
+        if (folder == null) {
+            String displayPath = path == null ? "" : path;
+            while (displayPath.endsWith("/") && !displayPath.isEmpty()) {
+                displayPath = displayPath.substring(0, displayPath.length() - 1);
+            }
+            String name = displayPath.isEmpty() ? "Root" : displayPath.substring(displayPath.lastIndexOf('/') + 1);
+            folder = new AudioFolderAggregate(volume, path == null ? "" : path, name.isEmpty() ? "Root" : name);
+            groups.put(key, folder);
+        }
+        folder.count++;
+    }
+
+    private static String audioFolderKey(String volume, String path) {
+        return (volume == null ? "" : volume) + "::" + (path == null ? "" : path);
+    }
+
+    private static String normalizeRelativePath(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        if (raw.indexOf('\\') >= 0 || raw.startsWith("/")) {
+            throw new IllegalArgumentException("Invalid MediaStore relativePath");
+        }
+        String[] segments = raw.split("/+");
+        StringBuilder normalized = new StringBuilder();
+        for (String segment : segments) {
+            if (segment.isEmpty()) continue;
+            if (".".equals(segment) || "..".equals(segment)) {
+                throw new IllegalArgumentException("Invalid MediaStore relativePath");
+            }
+            if (normalized.length() > 0) normalized.append('/');
+            normalized.append(segment);
+        }
+        if (normalized.length() > 0) normalized.append('/');
+        return normalized.toString();
+    }
+
+    /** Treats DATA solely as legacy MediaStore metadata; it is never opened as a filesystem path. */
+    private static String legacyParentPath(String dataPath) {
+        if (dataPath == null || dataPath.isEmpty()) return "";
+        int separator = dataPath.lastIndexOf('/');
+        if (separator < 0) return "";
+        if (separator == 0) return "/";
+        return dataPath.substring(0, separator);
+    }
+
+    private static long parseAfterId(String value) {
+        if (value == null || value.isEmpty()) return 0L;
+        if (!value.matches("[0-9]{1,19}")) throw new IllegalArgumentException("afterId must be a non-negative MediaStore row ID");
+        try {
+            long id = Long.parseLong(value);
+            if (id < 0) throw new IllegalArgumentException("afterId must be non-negative");
+            return id;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("afterId is outside the supported range");
+        }
+    }
+
+    @PluginMethod
+    public void listMediaAudioFiles(PluginCall call) {
+        try {
+            requireAudioLibraryPermission();
+            String volumeName = call.getString("volumeName");
+            String suppliedPath = call.getString("relativePath");
+            if (volumeName == null || volumeName.isEmpty() || suppliedPath == null) {
+                throw new IllegalArgumentException("volumeName and relativePath are required");
+            }
+            String relativePath;
+            Uri collection;
+            String[] columns;
+            String selection;
+            String[] selectionArgs;
+            boolean modern = Build.VERSION.SDK_INT >= 29;
+            long afterId = parseAfterId(call.getString("afterId", "0"));
+            int limit = Math.max(1, Math.min(MEDIA_AUDIO_PAGE_MAX,
+                    call.getInt("limit", MEDIA_AUDIO_PAGE_DEFAULT)));
+
+            if (modern) {
+                relativePath = normalizeRelativePath(suppliedPath);
+                Set<String> volumes = MediaStore.getExternalVolumeNames(getContext());
+                if (volumes == null || !volumes.contains(volumeName)) {
+                    throw new IllegalArgumentException("Unknown or unavailable MediaStore volume: " + volumeName);
+                }
+                collection = MediaStore.Audio.Media.getContentUri(volumeName);
+                columns = new String[]{
+                        MediaStore.Audio.Media._ID,
+                        MediaStore.Audio.Media.DISPLAY_NAME,
+                        MediaStore.Audio.Media.RELATIVE_PATH,
+                        MediaStore.Audio.Media.MIME_TYPE,
+                        MediaStore.Audio.Media.SIZE,
+                        MediaStore.Audio.Media.DATE_MODIFIED
+                };
+                if (relativePath.isEmpty()) {
+                    selection = MediaStore.Audio.Media.VOLUME_NAME + " = ? AND ("
+                            + MediaStore.Audio.Media.RELATIVE_PATH + " = '' OR "
+                            + MediaStore.Audio.Media.RELATIVE_PATH + " IS NULL) AND "
+                            + MediaStore.Audio.Media._ID + " > ?";
+                    selectionArgs = new String[]{volumeName, Long.toString(afterId)};
+                } else {
+                    selection = MediaStore.Audio.Media.VOLUME_NAME + " = ? AND "
+                            + MediaStore.Audio.Media.RELATIVE_PATH + " = ? AND "
+                            + MediaStore.Audio.Media._ID + " > ?";
+                    selectionArgs = new String[]{volumeName, relativePath, Long.toString(afterId)};
+                }
+            } else {
+                if (!LEGACY_AUDIO_VOLUME.equals(volumeName)) {
+                    throw new IllegalArgumentException("Legacy Android supports only the external audio volume");
+                }
+                relativePath = normalizeLegacySelectedPath(suppliedPath);
+                collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                columns = new String[]{
+                        MediaStore.Audio.Media._ID,
+                        MediaStore.Audio.Media.DISPLAY_NAME,
+                        MediaStore.Audio.Media.DATA,
+                        MediaStore.Audio.Media.MIME_TYPE,
+                        MediaStore.Audio.Media.SIZE,
+                        MediaStore.Audio.Media.DATE_MODIFIED
+                };
+                String parentExpr = "CASE WHEN length(" + MediaStore.Audio.Media.DATA + ") = length("
+                        + MediaStore.Audio.Media.DISPLAY_NAME + ") + 1 THEN '/' ELSE substr("
+                        + MediaStore.Audio.Media.DATA + ", 1, length(" + MediaStore.Audio.Media.DATA
+                        + ") - length(" + MediaStore.Audio.Media.DISPLAY_NAME + ") - 1) END";
+                if (relativePath.isEmpty()) {
+                    selection = "(" + MediaStore.Audio.Media.DATA + " IS NULL OR " + parentExpr + " = '') AND "
+                            + MediaStore.Audio.Media._ID + " > ?";
+                    selectionArgs = new String[]{Long.toString(afterId)};
+                } else {
+                    selection = MediaStore.Audio.Media.DATA + " IS NOT NULL AND " + parentExpr + " = ? AND "
+                            + MediaStore.Audio.Media._ID + " > ?";
+                    selectionArgs = new String[]{relativePath, Long.toString(afterId)};
+                }
+            }
+
+            JSArray resultItems = new JSArray();
+            String nextAfterId = Long.toString(afterId);
+            boolean done = true;
+            String sortOrder = MediaStore.Audio.Media._ID + " ASC";
+            try (Cursor cursor = getContext().getContentResolver().query(
+                    collection, columns, selection, selectionArgs, sortOrder)) {
+                if (cursor == null) throw new java.io.IOException("MediaStore returned a null cursor for volume " + volumeName);
+                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+                int nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME);
+                int pathColumn = cursor.getColumnIndexOrThrow(modern
+                        ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA);
+                int mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE);
+                int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
+                int modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED);
+                int returned = 0;
+                while (cursor.moveToNext()) {
+                    long id = cursor.getLong(idColumn);
+                    String rowPath;
+                    if (modern) {
+                        rowPath = normalizeRelativePath(cursor.isNull(pathColumn) ? "" : cursor.getString(pathColumn));
+                    } else {
+                        rowPath = cursor.isNull(pathColumn) ? "" : legacyParentPath(cursor.getString(pathColumn));
+                    }
+                    if (!relativePath.equals(rowPath)) continue;
+                    if (returned == limit) {
+                        done = false;
+                        break;
+                    }
+                    String name = cursor.isNull(nameColumn) ? "" : cursor.getString(nameColumn);
+                    String mimeType = cursor.isNull(mimeColumn) ? "application/octet-stream" : cursor.getString(mimeColumn);
+                    long size = cursor.isNull(sizeColumn) ? 0L : Math.max(0L, cursor.getLong(sizeColumn));
+                    long modifiedSeconds = cursor.isNull(modifiedColumn) ? 0L : Math.max(0L, cursor.getLong(modifiedColumn));
+                    long lastModified = modifiedSeconds > Long.MAX_VALUE / 1000L
+                            ? Long.MAX_VALUE : modifiedSeconds * 1000L;
+                    JSObject item = new JSObject();
+                    item.put("id", Long.toString(id));
+                    item.put("uri", ContentUris.withAppendedId(collection, id).toString());
+                    item.put("name", name);
+                    item.put("relativePath", modern ? rowPath : relativePath);
+                    item.put("mimeType", mimeType);
+                    item.put("size", size);
+                    item.put("lastModified", lastModified);
+                    item.put("sourceKey", "android-mediastore::" + volumeName + "::" + id + "::" + size + "::" + modifiedSeconds);
+                    resultItems.put(item);
+                    nextAfterId = Long.toString(id);
+                    returned++;
+                }
+            }
+            JSObject response = new JSObject();
+            response.put("items", resultItems);
+            response.put("nextAfterId", nextAfterId);
+            response.put("done", done);
+            call.resolve(response);
+        } catch (SecurityException e) {
+            call.reject("Audio library access denied or revoked: " + e.getMessage());
+        } catch (Exception e) {
+            call.reject("Could not list MediaStore audio files: " + e.getMessage());
+        }
+    }
+
+    private static String normalizeLegacySelectedPath(String path) {
+        if (path.isEmpty()) return "";
+        if (path.indexOf('\\') >= 0 || path.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Invalid legacy MediaStore folder path");
+        }
+        String[] segments = path.split("/+");
+        for (String segment : segments) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                throw new IllegalArgumentException("Invalid legacy MediaStore folder path");
+            }
+        }
+        if (!path.startsWith("/")) throw new IllegalArgumentException("Legacy folder path must be absolute or empty");
+        while (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        return path;
     }
 
     /** Pede para o Android não otimizar a bateria do app (evita a música ser encerrada em segundo plano). */

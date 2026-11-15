@@ -49,12 +49,16 @@ function watchedItemPaths(item, folder) {
   const size = Number(item.size) || 0;
   const lastModified = Number(item.lastModified) || 0;
   const documentKey = watchedDocumentKey(item);
+  const canonicalKey = typeof mediaAudioCanonicalFromSaf === "function"
+    ? mediaAudioCanonicalFromSaf(folder.uri, relativePath)
+    : "";
   return {
     relativePath,
     sourcePath: folder.uri + "::" + relativePath,
-    sourceKey: [item.name, size, lastModified, folder.uri + "::" + relativePath].join("::"),
+    sourceKey: canonicalKey || [item.name, size, lastModified, folder.uri + "::" + relativePath].join("::"),
     legacyKey: [item.name, size, lastModified, relativePath].join("::"),
-    documentKey
+    documentKey,
+    canonicalKey
   };
 }
 
@@ -87,8 +91,9 @@ async function readWatchedFile(item, folder) {
   });
   const paths = watchedItemPaths(item, folder);
   try { Object.defineProperty(file, "sourcePath", { value: paths.sourcePath }); } catch (e) { logErr("pasta:read", e); }
-  if (paths.documentKey) {
-    try { Object.defineProperty(file, "sourceDocumentId", { value: paths.documentKey }); }
+  const sourceDocumentId = paths.canonicalKey || paths.documentKey;
+  if (sourceDocumentId) {
+    try { Object.defineProperty(file, "sourceDocumentId", { value: sourceDocumentId }); }
     catch (e) { logErr("pasta:read-id", e); }
   }
   return file;
@@ -114,6 +119,7 @@ async function syncWatchedFolder(manual, options = {}) {
   watchedSyncing = true;
   try {
     const ignoredUris = getIgnoredFolders().map(folder => folder.uri);
+    const mediaExcluded = typeof getMediaAudioImportExclusions === "function" ? getMediaAudioImportExclusions() : [];
     const known = new Set();
     const legacyKnown = new Set();
     for (const song of songs) {
@@ -121,6 +127,10 @@ async function syncWatchedFolder(manual, options = {}) {
       if (key) {
         known.add(key);
         legacyKnown.add(key);
+        if (typeof mediaAudioCanonicalFromWatchedSourceKey === "function") {
+          const canonical = mediaAudioCanonicalFromWatchedSourceKey(key);
+          if (canonical) known.add(canonical);
+        }
       }
     }
 
@@ -144,15 +154,22 @@ async function syncWatchedFolder(manual, options = {}) {
       }
       const skipPaths = options.skipPathsByUri && options.skipPathsByUri.get(folder.uri) || [];
       const items = (listing.files || []).filter(item => {
-        if (!skipPaths.length) return true;
         const path = String(item.relativePath || item.name || "").replace(/\\/g, "/");
-        return !skipPaths.some(skip => path === skip || path.startsWith(skip + "/"));
+        if (skipPaths.some(skip => path === skip || path.startsWith(skip + "/"))) return false;
+        if (mediaExcluded.length && typeof mediaAudioCanonicalFromSaf === "function"
+            && typeof mediaAudioCanonicalKeyIsExcluded === "function") {
+          const canonical = mediaAudioCanonicalFromSaf(folder.uri, path);
+          if (mediaAudioCanonicalKeyIsExcluded(canonical, mediaExcluded)) return false;
+        }
+        return true;
       });
       const audio = items.filter(item => !/\.lrc$/i.test(item.name || ""));
       const fresh = audio.filter(item => {
         const keys = watchedItemPaths(item, folder);
+        if (keys.canonicalKey && known.has(keys.canonicalKey)) return false;
         if ((keys.documentKey && known.has(keys.documentKey)) || known.has(keys.sourceKey) || legacyKnown.has(keys.legacyKey)) return false;
         if (keys.documentKey) known.add(keys.documentKey);
+        if (keys.canonicalKey) known.add(keys.canonicalKey);
         known.add(keys.sourceKey);
         return true;
       });

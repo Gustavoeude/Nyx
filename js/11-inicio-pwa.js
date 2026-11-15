@@ -64,6 +64,7 @@ loadSongs().then(async () => {
   if (typeof maybeScanGenresOnce === "function") maybeScanGenresOnce();
   if (!maybeStartOnboarding()) maybeAskPermissionsFirstRun();
   if (typeof syncWatchedFolder === "function") syncWatchedFolder(false);
+  if (typeof syncMediaAudioLibrary === "function") syncMediaAudioLibrary(false);
   if (nativeAutoDisabled) setTimeout(() => showToast("O player nativo foi desligado depois de falhas. Dá para religar nos Ajustes."), 1500);
 });
 

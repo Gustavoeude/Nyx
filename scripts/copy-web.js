@@ -24,6 +24,7 @@ const files = [
   "js/16-widgets.js",
   "js/11-inicio-pwa.js",
   "style.css",
+  "sw.js",
   "jsmediatags.min.js",
   "manifest.json",
   "icon-192.png",
