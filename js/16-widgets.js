@@ -19,26 +19,34 @@ function widgetSyncInfo() {
 
 // aplica no app os favoritos que você tocou no widget (guarda o estado desejado, não "alternar")
 let widgetFavBusy = false;
+let widgetFavRequested = false;
 async function applyWidgetFavorites() {
-  if (!widgetsOn || widgetFavBusy || !songs.length) return;
+  if (!widgetsOn) return;
+  widgetFavRequested = true;
+  if (widgetFavBusy || !songs.length) return;
   widgetFavBusy = true;
   try {
-    const r = await MN.takeWidgetFavorites();
-    let changed = false;
-    ((r && r.items) || []).forEach(it => {
-      const song = songs.find(s => String(s.id) === String(it.id));
-      if (song && !!song.favorite !== !!it.favorite) {
-        song.favorite = !!it.favorite;
-        dbPut(toRecord(song));
-        changed = true;
+    while (widgetFavRequested && songs.length) {
+      widgetFavRequested = false;
+      const r = await MN.takeWidgetFavorites();
+      let changed = false;
+      ((r && r.items) || []).forEach(it => {
+        const song = songs.find(s => String(s.id) === String(it.id));
+        if (song && !!song.favorite !== !!it.favorite) {
+          song.favorite = !!it.favorite;
+          dbPut(toRecord(song));
+          changed = true;
+        }
+      });
+      if (changed) {
+        renderAll();
+        updateHome();
+        if (currentId !== null) updateFullPlayer();
       }
-    });
-    if (changed) {
-      renderAll();
-      updateHome();
-      if (currentId !== null) updateFullPlayer();
     }
   } catch (e) {
+    // Preserve the request for a later event/visibility pass; do not retry in a tight loop.
+    widgetFavRequested = true;
     logErr("widget:favoritos", e);
   } finally {
     widgetFavBusy = false;

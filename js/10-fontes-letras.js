@@ -31,9 +31,24 @@ const fontDbReady = (() => {
 })();
 
 async function fontDbPut(rec) {
-  const db = await fontDbReady;
-  if (!db) return;
-  db.transaction("fonts", "readwrite").objectStore("fonts").put(rec);
+  try {
+    const db = await fontDbReady;
+    if (!db) return false;
+    return await new Promise(resolve => {
+      let tx;
+      try {
+        tx = db.transaction("fonts", "readwrite");
+        tx.objectStore("fonts").put(rec);
+      } catch (_) {
+        resolve(false);
+        return;
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = tx.onabort = () => resolve(false);
+    });
+  } catch (_) {
+    return false;
+  }
 }
 
 async function fontDbDelete(id) {
@@ -126,12 +141,15 @@ async function importFontFile(file) {
   }
 
   customFonts.push(rec);
-  await fontDbPut(rec);
+  const persisted = await fontDbPut(rec);
   settings.font = id;
-  saveSettings();
+  // Sem persistência da fonte, mantenha a seleção apenas nesta sessão.
+  if (persisted) saveSettings();
   applyFont();
   refreshSettingsPage();
-  showToast("Fonte “" + rec.name + "” adicionada");
+  showToast(persisted
+    ? "Fonte “" + rec.name + "” adicionada"
+    : "Fonte “" + rec.name + "” disponível apenas nesta sessão; não foi salva");
 }
 
 $("fontInput").addEventListener("change", () => {
@@ -153,7 +171,7 @@ function parseLrc(text) {
   const lines = [];
   let synced = false;
   const off = /^\s*\[offset:\s*([+-]?\d+)\s*\]/im.exec(text);
-  const fileOffset = off ? Number(off[1]) / 1000 : 0; // ms; positivo = letra antes
+  const fileOffset = off ? Number(off[1]) / 1000 : 0; // ms; positivo atrasa a letra, negativo adianta
 
   text.split(/\r?\n/).forEach(raw => {
     const stamps = Array.from(
@@ -174,7 +192,7 @@ function parseLrc(text) {
     stamps.forEach(m => {
       const frac = m[3] ? Number(m[3]) / Math.pow(10, m[3].length) : 0;
       lines.push({
-        t: Number(m[1]) * 60 + Number(m[2]) + frac - fileOffset,
+        t: Number(m[1]) * 60 + Number(m[2]) + frac + fileOffset,
         text: content || "♪"
       });
     });
@@ -402,17 +420,25 @@ lrcInput.addEventListener("change", async () => {
     return;
   }
 
+  let lyrics;
   try {
-    song.lyrics = await file.text();
-    song.lyricsSource = "lrc";
-    song.lyricsSourceId = null;
+    lyrics = await file.text();
   } catch {
     showToast("Não consegui ler esse arquivo");
     return;
   }
 
-  dbPut(toRecord(song));
+  song.lyrics = lyrics;
+  song.lyricsSource = "lrc";
+  song.lyricsSourceId = null;
+  let persisted = false;
+  try {
+    persisted = await dbPut(toRecord(song));
+  } catch (_) {
+    // A letra ainda fica disponível no objeto em memória até o app ser fechado.
+  }
   if (song.id === currentId) renderLyrics(song);
-  showToast("Letra adicionada");
+  showToast(persisted
+    ? "Letra adicionada"
+    : "Letra disponível apenas nesta sessão; não foi salva no armazenamento local");
 });
-

@@ -149,7 +149,7 @@ const eqUi = { loaded: false, supported: true, enabled: false, bands: [60, 230, 
 let eqSendTimer = 0;
 
 async function loadAudioFx() {
-  if (!MN) return eqUi;
+  if (!(MN && nativeMode)) return eqUi;
   try {
     const r = await MN.getAudioFx();
     if (r) {
@@ -167,7 +167,9 @@ async function loadAudioFx() {
 
 function eqSend(now) {
   clearTimeout(eqSendTimer);
+  if (!(MN && nativeMode)) return;
   const go = () => {
+    if (!(MN && nativeMode)) return;
     try {
       const r = MN.setEqualizer({
         enabled: eqUi.enabled,
@@ -198,6 +200,11 @@ function pageEqualizador() {
   const box = el("div", "eq-page");
   const msg = el("div", "set-hint", "Carregando…");
   box.appendChild(msg);
+
+  if (!(MN && nativeMode)) {
+    msg.textContent = "Equalizador disponível apenas quando o Nyx está usando o player nativo.";
+    return [box];
+  }
 
   loadAudioFx().then(() => {
     if (!box.isConnected) return;
@@ -345,6 +352,10 @@ function fadeLabel(ms) {
 }
 
 async function setFadeMs(ms) {
+  if (!(MN && nativeMode)) {
+    showToast("Transição suave disponível apenas quando o Nyx está usando o player nativo.");
+    return;
+  }
   try {
     await MN.setFade({ ms });
     eqUi.fadeMs = ms;
@@ -385,7 +396,7 @@ function audioExtrasSections() {
     if (label && sleepRow.isConnected) label.textContent = sleepLabel();
   });
 
-  if (MN) {
+  if (MN && nativeMode) {
     const fxSec = el("div", "set-sec");
     fxSec.appendChild(el("div", "set-label", "Som"));
 

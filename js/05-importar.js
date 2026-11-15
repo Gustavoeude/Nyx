@@ -14,6 +14,7 @@ const audioExt = /\.(mp3|m4a|m4b|aac|flac|ogg|oga|opus|wav|weba|webm|aiff|aif|al
 const lrcExt = /\.lrc$/i;
 
 function fileIdentity(file) {
+  if (file.sourceDocumentId) return String(file.sourceDocumentId);
   return [file.name, file.size, file.lastModified || 0, file.sourcePath || file.webkitRelativePath || ""].join("::");
 }
 

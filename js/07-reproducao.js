@@ -521,17 +521,21 @@ async function nativeStart(song, autoplay, startAt) {
   try {
     const item = await nativeItem(song);
     if (token !== nativeToken) return;
+    const queueAutoplay = audio.loadAutoplay(song.id, autoplay);
     await MN.setQueue({
       items: [item],
-      autoplay,
+      autoplay: queueAutoplay,
       position: Math.max(0, Math.round((startAt || 0) * 1000)),
       repeatOne: repeat === "one" || (repeat === "all" && queue.length === 1)
     });
+    if (token !== nativeToken) return;
+    audio.finishLoad(song.id, false);
     nativeRefreshUpcoming();
   } catch (e) {
     if (token !== nativeToken) return;
     console.error(e);
     lsSet("nativeFail", 0); // falha tratada (sem travar o app) não conta para a proteção
+    audio.finishLoad(song.id, true);
     audio.pause();
     notifyPlaybackProblem("Não consegui preparar esta música para o player nativo.");
   } finally {

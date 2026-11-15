@@ -48,6 +48,7 @@ async function restoreSavedQueue() {
   if (!st || currentId !== null || !songs.length) return false;
 
   savedQueueRestoring = true;
+  let recoveredMissingSong = false;
   try {
     const valid = new Set(allIds());
     let id = st.id;
@@ -73,10 +74,27 @@ async function restoreSavedQueue() {
     // a música pode ter mudado enquanto a leitura acima esperava
     if (currentId !== null) return false;
 
-    const song = getSong(id);
-    if (!song) return false;
-
     let q = Array.isArray(st.queue) ? st.queue.filter(x => valid.has(x)) : [];
+    let song = getSong(id);
+    if (!song) {
+      // Se a faixa salva foi excluída, retoma a fila na próxima faixa válida,
+      // sem reaplicar a posição da faixa que já não existe.
+      const savedOrder = Array.isArray(st.queue) ? st.queue : [];
+      const currentIndex = savedOrder.findIndex(x => String(x) === String(st.id));
+      const candidates = currentIndex >= 0
+        ? savedOrder.slice(currentIndex + 1).concat(savedOrder.slice(0, currentIndex))
+        : q;
+      id = candidates.find(x => valid.has(x)) ?? q[0] ?? allIds()[0];
+      song = getSong(id);
+      if (!song) {
+        dropSavedQueueIfMissing();
+        return false;
+      }
+      pos = 0;
+      dur = 0;
+      recoveredMissingSong = true;
+    }
+
     if (!q.includes(song.id)) q = allIds();
 
     queue = q;
@@ -112,5 +130,6 @@ async function restoreSavedQueue() {
     return false;
   } finally {
     savedQueueRestoring = false;
+    if (recoveredMissingSong && currentId !== null) saveQueueState(true);
   }
 }
