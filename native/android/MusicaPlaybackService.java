@@ -109,6 +109,8 @@ public class MusicaPlaybackService extends MediaSessionService {
 
     /** true só quando o app avisou que a lista realmente termina na fila nativa (sem repetir). */
     private boolean listEnds = false;
+    /** Geração dos fallbacks: qualquer controle ou atualização válida invalida callbacks antigos. */
+    private long fallbackGeneration = 0;
     private MediaSession session;
     private PrefetchingBitmapLoader artworkBitmapLoader;
 
@@ -353,6 +355,7 @@ public class MusicaPlaybackService extends MediaSessionService {
         }
 
         private void goNext() {
+            invalidateFallbacks();
             if (super.hasNextMediaItem()) {
                 super.seekToNextMediaItem();
             } else {
@@ -362,6 +365,7 @@ public class MusicaPlaybackService extends MediaSessionService {
         }
 
         private void goPrevious() {
+            invalidateFallbacks();
             if (getCurrentPosition() > 3000) {
                 seekTo(0);
             } else if (super.hasPreviousMediaItem()) {
@@ -376,6 +380,26 @@ public class MusicaPlaybackService extends MediaSessionService {
         @Override public void seekToNextMediaItem() { goNext(); }
         @Override public void seekToPrevious() { goPrevious(); }
         @Override public void seekToPreviousMediaItem() { goPrevious(); }
+
+        @Override public void play() {
+            invalidateFallbacks();
+            super.play();
+        }
+
+        @Override public void pause() {
+            invalidateFallbacks();
+            super.pause();
+        }
+
+        @Override public void seekTo(long positionMs) {
+            invalidateFallbacks();
+            super.seekTo(positionMs);
+        }
+
+        @Override public void seekTo(int mediaItemIndex, long positionMs) {
+            invalidateFallbacks();
+            super.seekTo(mediaItemIndex, positionMs);
+        }
     }
 
     private void action(String name) {
@@ -397,8 +421,9 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (player == null) return;
         MediaItem before = player.getCurrentMediaItem();
         final String id = before == null ? "" : before.mediaId;
+        final long generation = fallbackGeneration;
         MAIN.postDelayed(() -> {
-            if (player == null) return;
+            if (player == null || generation != fallbackGeneration) return;
             MediaItem cur = player.getCurrentMediaItem();
             if (cur == null || !cur.mediaId.equals(id)) return; // o app respondeu
             int n = player.getMediaItemCount();
@@ -413,9 +438,11 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (player == null) return;
         MediaItem before = player.getCurrentMediaItem();
         final String id = before == null ? "" : before.mediaId;
+        final long generation = fallbackGeneration;
         MAIN.postDelayed(() -> {
-            if (player == null || listEnds) return;
+            if (player == null || generation != fallbackGeneration || listEnds) return;
             if (player.getPlaybackState() != Player.STATE_ENDED) return;
+            if (!player.getPlayWhenReady()) return; // respeita uma pausa, inclusive se o fim chegou depois dela
             MediaItem cur = player.getCurrentMediaItem();
             if (cur == null || !cur.mediaId.equals(id)) return; // o app respondeu
             player.seekTo(0, 0L);
@@ -426,6 +453,10 @@ public class MusicaPlaybackService extends MediaSessionService {
     private void resumeAfterWrap() {
         if (player.getPlaybackState() == Player.STATE_IDLE) player.prepare();
         player.setPlayWhenReady(true);
+    }
+
+    private void invalidateFallbacks() {
+        fallbackGeneration++;
     }
 
     // ---------- comandos (sempre chamados na thread principal via run) ----------
@@ -520,6 +551,7 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (items.isEmpty()) {
             throw new IllegalArgumentException("Arquivo de música não encontrado no armazenamento do app.");
         }
+        invalidateFallbacks();
         player.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
         listEnds = false;
         preloadArtwork(items);
@@ -535,9 +567,10 @@ public class MusicaPlaybackService extends MediaSessionService {
      *             false só quando a lista realmente termina (o player para no fim, como esperado).
      */
     void setUpcoming(String afterId, List<MediaItem> items, boolean repeatOne, boolean loop) {
-        applyLoop(repeatOne, loop);
         MediaItem cur = player.getCurrentMediaItem();
         if (cur == null || !cur.mediaId.equals(afterId)) return; // o app se atualiza pelo evento "transition"
+        invalidateFallbacks();
+        applyLoop(repeatOne, loop);
         int idx = player.getCurrentMediaItemIndex();
         int n = player.getMediaItemCount();
         if (n > idx + 1) player.removeMediaItems(idx + 1, n);
@@ -570,9 +603,10 @@ public class MusicaPlaybackService extends MediaSessionService {
 
     /** Mantém só as primeiras "keep" músicas depois da atual; o resto é reenviado em seguida. */
     void cutUpcoming(String afterId, int keep, boolean repeatOne, boolean loop) {
-        applyLoop(repeatOne, loop);
         MediaItem cur = player.getCurrentMediaItem();
         if (cur == null || !cur.mediaId.equals(afterId)) return;
+        invalidateFallbacks();
+        applyLoop(repeatOne, loop);
         int idx = player.getCurrentMediaItemIndex();
         int n = player.getMediaItemCount();
         int from = idx + 1 + Math.max(0, keep);
@@ -586,6 +620,7 @@ public class MusicaPlaybackService extends MediaSessionService {
         int n = player.getMediaItemCount();
         if (n == 0) return;
         if (!player.getMediaItemAt(n - 1).mediaId.equals(prevId)) return;
+        invalidateFallbacks();
         if (n - player.getCurrentMediaItemIndex() <= 6) preloadArtwork(items);
         player.addMediaItems(items);
         if (loop && player.getRepeatMode() == Player.REPEAT_MODE_OFF) player.setRepeatMode(Player.REPEAT_MODE_ALL);
@@ -761,6 +796,7 @@ public class MusicaPlaybackService extends MediaSessionService {
             sleepRunnable = () -> {
                 sleepRunnable = null;
                 sleepEndAt = 0;
+                invalidateFallbacks();
                 try { player.pause(); } catch (Exception ignored) {}
                 emitSleep(true);
             };
@@ -770,6 +806,7 @@ public class MusicaPlaybackService extends MediaSessionService {
     }
 
     void cancelSleep() {
+        invalidateFallbacks();
         if (sleepRunnable != null) MAIN.removeCallbacks(sleepRunnable);
         sleepRunnable = null;
         sleepEndAt = 0;
@@ -794,16 +831,18 @@ public class MusicaPlaybackService extends MediaSessionService {
         if (k != null) k.emit("sleep", sleepObject(fired));
     }
 
-    void play() { player.play(); }
-    void pause() { player.pause(); }
-    void seek(long ms) { player.seekTo(Math.max(0L, ms)); }
-    void rate(float r) { if (r > 0f && r <= 4f) player.setPlaybackSpeed(r); }
+    void play() { invalidateFallbacks(); player.play(); }
+    void pause() { invalidateFallbacks(); player.pause(); }
+    void seek(long ms) { invalidateFallbacks(); player.seekTo(Math.max(0L, ms)); }
+    void rate(float r) { if (r > 0f && r <= 4f) { invalidateFallbacks(); player.setPlaybackSpeed(r); } }
     void repeatOne(boolean one) {
+        invalidateFallbacks();
         if (one) player.setRepeatMode(Player.REPEAT_MODE_ONE);
         else if (player.getRepeatMode() == Player.REPEAT_MODE_ONE) player.setRepeatMode(Player.REPEAT_MODE_ALL);
     }
     /** Botão X da notificação: para a música e tira o card. */
     void closeFromNotification() {
+        invalidateFallbacks();
         try {
             EventSink k = sink;
             if (k != null) {
@@ -822,6 +861,7 @@ public class MusicaPlaybackService extends MediaSessionService {
     }
 
     void stopAll() {
+        invalidateFallbacks();
         player.stop();
         player.clearMediaItems();
         emitState(null);

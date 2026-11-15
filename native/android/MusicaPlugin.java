@@ -100,7 +100,7 @@ public class MusicaPlugin extends Plugin {
             String value = call.getString("uri");
             if (value == null || value.isEmpty()) throw new IllegalArgumentException("Pasta inválida");
             Uri treeUri = Uri.parse(value);
-            List<String> ignoredDocumentIds = new ArrayList<>();
+            Set<Uri> ignoredDocumentUris = new HashSet<>();
             JSArray ignoredUris = call.getArray("ignoredUris");
             if (ignoredUris != null) {
                 for (int i = 0; i < ignoredUris.length(); i++) {
@@ -108,14 +108,15 @@ public class MusicaPlugin extends Plugin {
                     if (ignoredValue.isEmpty()) continue;
                     Uri ignoredUri = Uri.parse(ignoredValue);
                     if (treeUri.getAuthority() != null && treeUri.getAuthority().equals(ignoredUri.getAuthority())) {
-                        ignoredDocumentIds.add(DocumentsContract.getTreeDocumentId(ignoredUri));
+                        String ignoredId = DocumentsContract.getTreeDocumentId(ignoredUri);
+                        ignoredDocumentUris.add(DocumentsContract.buildDocumentUriUsingTree(treeUri, ignoredId));
                     }
                 }
             }
             JSArray files = new JSArray();
             JSArray folders = new JSArray();
             String rootId = DocumentsContract.getTreeDocumentId(treeUri);
-            collectFolderAudio(treeUri, rootId, "", files, folders, ignoredDocumentIds);
+            collectFolderAudio(treeUri, rootId, "", files, folders, ignoredDocumentUris, false);
 
             JSObject response = new JSObject();
             response.put("files", files);
@@ -128,8 +129,9 @@ public class MusicaPlugin extends Plugin {
     }
 
     private void collectFolderAudio(Uri treeUri, String parentId, String prefix, JSArray files,
-                                    JSArray folders, List<String> ignoredDocumentIds) throws Exception {
-        if (isIgnoredDocument(parentId, ignoredDocumentIds)) return;
+                                    JSArray folders, Set<Uri> ignoredDocumentUris,
+                                    boolean ignoredAncestor) throws Exception {
+        if (ignoredAncestor || isIgnoredDocument(treeUri, parentId, ignoredDocumentUris)) return;
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId);
         String[] columns = {
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -154,9 +156,8 @@ public class MusicaPlugin extends Plugin {
                 String relativePath = prefix.isEmpty() ? name : prefix + "/" + name;
 
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
-                    if (!isIgnoredDocument(id, ignoredDocumentIds)) {
-                        collectFolderAudio(treeUri, id, relativePath, files, folders, ignoredDocumentIds);
-                    }
+                    boolean ignored = isIgnoredDocument(treeUri, id, ignoredDocumentUris);
+                    collectFolderAudio(treeUri, id, relativePath, files, folders, ignoredDocumentUris, ignored);
                 } else if (isAudioDocument(name, mime)) {
                     Uri fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
                     JSObject item = new JSObject();
@@ -181,12 +182,10 @@ public class MusicaPlugin extends Plugin {
         }
     }
 
-    private boolean isIgnoredDocument(String documentId, List<String> ignoredDocumentIds) {
-        if (documentId == null) return false;
-        for (String ignoredId : ignoredDocumentIds) {
-            if (documentId.equals(ignoredId) || documentId.startsWith(ignoredId + "/")) return true;
-        }
-        return false;
+    private boolean isIgnoredDocument(Uri treeUri, String documentId, Set<Uri> ignoredDocumentUris) {
+        if (documentId == null || ignoredDocumentUris.isEmpty()) return false;
+        Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
+        return ignoredDocumentUris.contains(documentUri);
     }
 
     private boolean isAudioDocument(String name, String mime) {
@@ -291,24 +290,28 @@ public class MusicaPlugin extends Plugin {
         final String hex = call.getString("navColor");
         final boolean lightBackground = call.getBoolean("light", false);
         final Activity activity = getActivity();
-        if (activity == null || hex == null) {
-            call.resolve();
+        if (activity == null) {
+            call.reject("Não foi possível aplicar as cores: atividade indisponível");
             return;
         }
-        activity.runOnUiThread(() -> {
-            try {
-                android.view.Window window = activity.getWindow();
-                int color = android.graphics.Color.parseColor(hex);
-                window.setNavigationBarColor(color);
-                // Fundo da janela: é ele que aparece na faixa entre o app e o teclado
-                // (e atrás da barra de status). Sem isso fica o cinza padrão do Android.
-                window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(color));
-                window.getDecorView().setBackgroundColor(color);
-                android.view.View content = activity.findViewById(android.R.id.content);
-                if (content != null) content.setBackgroundColor(color);
-                // Os pais do WebView também recebem a cor: é o fundo deles que aparece na faixa
-                // de margem/preenchimento (barra de status e espaço acima do teclado).
+        if (hex == null) {
+            call.reject("Não foi possível aplicar as cores: cor da barra ausente");
+            return;
+        }
+        try {
+            activity.runOnUiThread(() -> {
                 try {
+                    android.view.Window window = activity.getWindow();
+                    int color = android.graphics.Color.parseColor(hex);
+                    window.setNavigationBarColor(color);
+                    // Fundo da janela: é ele que aparece na faixa entre o app e o teclado
+                    // (e atrás da barra de status). Sem isso fica o cinza padrão do Android.
+                    window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(color));
+                    window.getDecorView().setBackgroundColor(color);
+                    android.view.View content = activity.findViewById(android.R.id.content);
+                    if (content != null) content.setBackgroundColor(color);
+                    // Os pais do WebView também recebem a cor: é o fundo deles que aparece na faixa
+                    // de margem/preenchimento (barra de status e espaço acima do teclado).
                     android.view.View web = getBridge().getWebView();
                     android.view.ViewParent p = web != null ? web.getParent() : null;
                     int guard = 0;
@@ -316,23 +319,38 @@ public class MusicaPlugin extends Plugin {
                         ((android.view.View) p).setBackgroundColor(color);
                         p = p.getParent();
                     }
-                } catch (Exception ignored2) { }
-                androidx.core.view.WindowInsetsControllerCompat bars =
-                        androidx.core.view.WindowCompat.getInsetsController(window, window.getDecorView());
-                bars.setAppearanceLightNavigationBars(lightBackground);
-                bars.setAppearanceLightStatusBars(lightBackground);
-            } catch (Exception ignored) { }
-            call.resolve();
-        });
+                    androidx.core.view.WindowInsetsControllerCompat bars =
+                            androidx.core.view.WindowCompat.getInsetsController(window, window.getDecorView());
+                    bars.setAppearanceLightNavigationBars(lightBackground);
+                    bars.setAppearanceLightStatusBars(lightBackground);
+                    call.resolve();
+                } catch (Exception e) {
+                    call.reject("Não foi possível aplicar as cores: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            call.reject("Não foi possível aplicar as cores: " + e.getMessage());
+        }
     }
 
     /** O app informa a música atual e se ela é favorita (coração do widget). */
     @PluginMethod
     public void widgetInfo(PluginCall call) {
         try {
-            NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false), call.getString("colors", ""));
-        } catch (Exception ignored) {}
-        call.resolve();
+            String colors = call.getString("colors", "");
+            boolean refreshed = NyxWidgets.setInfo(getContext(), call.getString("id", ""), call.getBoolean("favorite", false), colors);
+            if (colors != null && !colors.isEmpty()) {
+                if (!refreshed) throw new IllegalStateException("não foi possível redesenhar os widgets");
+                String savedColors = getContext().getSharedPreferences(NyxWidgets.PREFS, Context.MODE_PRIVATE)
+                        .getString("colors", "");
+                if (!colors.equals(savedColors)) {
+                    throw new IllegalStateException("as cores do widget não foram salvas");
+                }
+            }
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Não foi possível atualizar o widget: " + e.getMessage());
+        }
     }
 
     /** Favoritos pedidos pelo widget que o app ainda não aplicou. */

@@ -201,8 +201,51 @@ document.querySelectorAll(".nav-item").forEach(b => {
     }
   }
 
+  function cancel() {
+    if (!active && !engaged && !peekEl) return;
+
+    const cur = page;
+    const other = peekEl;
+    const canceledDx = dx;
+    const W = width();
+    const wasEngaged = engaged;
+
+    active = false;
+    engaged = false;
+    sx = 0;
+    sy = 0;
+    st = 0;
+    dx = 0;
+    page = null;
+
+    if (!cur) {
+      clearPeek();
+      return;
+    }
+    cur.classList.remove("dragging");
+    if (!wasEngaged) {
+      cur.style.transform = "";
+      cur.style.transition = "";
+      clearPeek();
+      return;
+    }
+
+    // Um gesto cancelado sempre volta ao estado inicial; nunca conclui a navegação.
+    cur.style.transition = "transform .5s var(--spring)";
+    cur.style.transform = "";
+    if (other) {
+      other.style.transition = "transform .5s var(--spring)";
+      other.style.transform = "translateX(" + (canceledDx < 0 ? W : -W) + "px)";
+    }
+    setTimeout(() => {
+      if (page !== null || peekEl !== other) return;
+      cur.style.transition = "";
+      clearPeek();
+    }, 520);
+  }
+
   document.addEventListener("touchend", finish, { passive: true });
-  document.addEventListener("touchcancel", finish, { passive: true });
+  document.addEventListener("touchcancel", cancel, { passive: true });
 })();
 
 /* ==========================================================

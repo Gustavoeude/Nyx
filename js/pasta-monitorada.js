@@ -8,6 +8,8 @@
    ========================================================== */
 let watchedSyncing = false;
 let watchedLastSync = 0;
+let watchedSyncRequested = false;
+let watchedSyncRequestedManual = false;
 
 function normalizeDirectoryList(value) {
   if (!Array.isArray(value)) return [];
@@ -38,12 +40,23 @@ function watchedItemPaths(item, folder) {
   const relativePath = String(item.relativePath || item.name || "").replace(/\\/g, "/");
   const size = Number(item.size) || 0;
   const lastModified = Number(item.lastModified) || 0;
+  const documentKey = watchedDocumentKey(item);
   return {
     relativePath,
     sourcePath: folder.uri + "::" + relativePath,
     sourceKey: [item.name, size, lastModified, folder.uri + "::" + relativePath].join("::"),
-    legacyKey: [item.name, size, lastModified, relativePath].join("::")
+    legacyKey: [item.name, size, lastModified, relativePath].join("::"),
+    documentKey
   };
+}
+
+function watchedDocumentKey(item) {
+  const uri = String(item && item.uri || "");
+  const match = uri.match(/^([a-z][a-z\d+.-]*:\/\/[^/]+)\/(?:tree\/[^/]+\/)?document\/([^/?#]+)(?:[?#].*)?$/i);
+  if (!match) return "";
+  let documentId;
+  try { documentId = decodeURIComponent(match[2]); } catch (_) { return ""; }
+  return "android-document::" + match[1].toLocaleLowerCase("en-US") + "::" + documentId;
 }
 
 async function readWatchedFile(item, folder) {
@@ -66,6 +79,10 @@ async function readWatchedFile(item, folder) {
   });
   const paths = watchedItemPaths(item, folder);
   try { Object.defineProperty(file, "sourcePath", { value: paths.sourcePath }); } catch (e) { logErr("pasta:read", e); }
+  if (paths.documentKey) {
+    try { Object.defineProperty(file, "sourceDocumentId", { value: paths.documentKey }); }
+    catch (e) { logErr("pasta:read-id", e); }
+  }
   return file;
 }
 
@@ -79,7 +96,12 @@ function normalizedSidecarPath(item) {
 
 async function syncWatchedFolder(manual) {
   const folders = getWatchedFolders();
-  if (!MN || typeof MN.listFolderAudio !== "function" || !folders.length || watchedSyncing) return;
+  if (!MN || typeof MN.listFolderAudio !== "function" || !folders.length) return;
+  if (watchedSyncing) {
+    watchedSyncRequested = true;
+    watchedSyncRequestedManual = watchedSyncRequestedManual || !!manual;
+    return;
+  }
   watchedSyncing = true;
   try {
     const ignoredUris = getIgnoredFolders().map(folder => folder.uri);
@@ -95,13 +117,22 @@ async function syncWatchedFolder(manual) {
 
     const files = [];
     let discovered = 0;
+    let failedFolders = false;
     for (const folder of folders) {
-      const listing = await MN.listFolderAudio({ uri: folder.uri, ignoredUris });
+      let listing;
+      try {
+        listing = await MN.listFolderAudio({ uri: folder.uri, ignoredUris });
+      } catch (e) {
+        failedFolders = true;
+        logErr("pasta:list-folder", e);
+        continue;
+      }
       const items = listing.files || [];
       const audio = items.filter(item => !/\.lrc$/i.test(item.name || ""));
       const fresh = audio.filter(item => {
         const keys = watchedItemPaths(item, folder);
-        if (known.has(keys.sourceKey) || legacyKnown.has(keys.legacyKey)) return false;
+        if ((keys.documentKey && known.has(keys.documentKey)) || known.has(keys.sourceKey) || legacyKnown.has(keys.legacyKey)) return false;
+        if (keys.documentKey) known.add(keys.documentKey);
         known.add(keys.sourceKey);
         return true;
       });
@@ -120,19 +151,28 @@ async function syncWatchedFolder(manual) {
     }
 
     if (!discovered || !files.some(file => !/\.lrc$/i.test(file.name || ""))) {
-      if (manual) showToast("Diretórios já estão atualizados");
+      if (manual) showToast(failedFolders
+        ? "Não consegui ler um diretório. Verifique o acesso à pasta nos Ajustes."
+        : "Diretórios já estão atualizados");
       watchedLastSync = Date.now();
       return;
     }
 
     showToast("Encontrei " + discovered + (discovered === 1 ? " música nova…" : " músicas novas…"));
     await importFiles(files, "diretórios monitorados");
+    if (manual && failedFolders) showToast("Alguns diretórios não puderam ser lidos; os demais foram verificados.");
     watchedLastSync = Date.now();
   } catch (e) {
     logErr("pasta:sync", e);
     if (manual) showToast("Não consegui ler um diretório. Verifique o acesso à pasta nos Ajustes.");
   } finally {
     watchedSyncing = false;
+    if (watchedSyncRequested) {
+      const rerunManual = watchedSyncRequestedManual;
+      watchedSyncRequested = false;
+      watchedSyncRequestedManual = false;
+      Promise.resolve().then(() => syncWatchedFolder(rerunManual)).catch(e => logErr("pasta:rerun", e));
+    }
   }
 }
 

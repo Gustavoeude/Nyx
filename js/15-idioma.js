@@ -319,9 +319,13 @@ function detectDeviceLang() {
   return "pt";
 }
 
+function normalizeLanguage(value) {
+  return value === "pt" || value === "en" || value === "es" || value === "auto" ? value : "auto";
+}
+
 function resolveLang() {
-  const s = settings.language;
-  return s === "pt" || s === "en" || s === "es" ? s : detectDeviceLang();
+  const s = normalizeLanguage(settings.language);
+  return s === "auto" ? detectDeviceLang() : s;
 }
 
 let langUpperCache = null;
@@ -433,11 +437,13 @@ function applyLanguage() {
 }
 
 function languageSummary() {
-  const s = settings.language;
+  const s = normalizeLanguage(settings.language);
+  if (s === "auto") {
+    const d = LANGS.find(x => x.id === detectDeviceLang());
+    return "Automático (" + (d ? d.name : "Português") + ")";
+  }
   const l = LANGS.find(x => x.id === s);
-  if (l) return l.name;
-  const d = LANGS.find(x => x.id === detectDeviceLang());
-  return "Automático (" + (d ? d.name : "Português") + ")";
+  return l.name;
 }
 
 function langCircle(hue, initials) {
@@ -461,8 +467,9 @@ function pageIdioma() {
   const rows = [{ id: "auto", initials: "A", name: "Automático", hue: 265, desc: "Usa o idioma do seu celular" }]
     .concat(LANGS.map(l => ({ id: l.id, initials: l.initials, name: l.name, hue: l.hue, desc: "" })));
 
+  const selectedLanguage = normalizeLanguage(settings.language);
   rows.forEach(r => {
-    const selected = (settings.language || "auto") === r.id;
+    const selected = selectedLanguage === r.id;
     const row = el("button", "set-row");
     const text = el("div", "set-row-text");
     const title = el("strong", "", r.name);

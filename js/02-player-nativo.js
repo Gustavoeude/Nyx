@@ -49,6 +49,8 @@ class NativeAudio {
     this.loadedId = null;
     this._ended = false;
     this._gotDuration = false;
+    this._loadPendingId = null;
+    this._loadAutoplay = false;
   }
   addEventListener(type, fn) { (this._l[type] = this._l[type] || []).push(fn); }
   removeEventListener(type, fn) { this._l[type] = (this._l[type] || []).filter(f => f !== fn); }
@@ -79,6 +81,8 @@ class NativeAudio {
     this._posAt = 0;
     this.duration = NaN;
     this.setPlaying(false);
+    this.needsReload = false;
+    this._loadPendingId = null;
   }
   play() {
     if (this.loadedId !== null) {
@@ -92,12 +96,14 @@ class NativeAudio {
           return Promise.resolve();
         }
       }
+      if (this._loadPendingId !== null && String(this._loadPendingId) === String(this.loadedId)) this._loadAutoplay = true;
       this.setPlaying(true);
       try { MN.play(); } catch (e) { logErr("player-nativo:86", e); }
     }
     return Promise.resolve();
   }
   pause() {
+    if (this._loadPendingId !== null && String(this._loadPendingId) === String(this.loadedId)) this._loadAutoplay = false;
     this.setPlaying(false);
     try { if (this.loadedId !== null) MN.pause(); } catch (e) { logErr("player-nativo:92", e); }
   }
@@ -117,6 +123,8 @@ class NativeAudio {
   beginLoad(id, autoplay) {
     this.loadedId = id;
     this.needsReload = false;
+    this._loadPendingId = id;
+    this._loadAutoplay = !!autoplay;
     this._seenReady = false;
     this._ended = false;
     this._gotDuration = false;
@@ -127,6 +135,16 @@ class NativeAudio {
     this._emit("loadstart");
     this.setPlaying(autoplay);
   }
+  loadAutoplay(id, fallback) {
+    return this._loadPendingId !== null && String(this._loadPendingId) === String(id)
+      ? this._loadAutoplay
+      : !!fallback;
+  }
+  finishLoad(id, failed) {
+    if (String(this.loadedId) !== String(id)) return;
+    if (failed) this.needsReload = true;
+    if (this._loadPendingId !== null && String(this._loadPendingId) === String(id)) this._loadPendingId = null;
+  }
   // recebe o estado do player nativo
   apply(st) {
     if (!st) return;
@@ -136,6 +154,7 @@ class NativeAudio {
     if (st.error) {
       if (st.id && this.loadedId !== null && String(this.loadedId) !== String(st.id)) return;
       this.error = { code: 3 };
+      if (this.loadedId !== null) this.finishLoad(this.loadedId, true);
       this._emit("error");
       this.setPlaying(false);
       return;

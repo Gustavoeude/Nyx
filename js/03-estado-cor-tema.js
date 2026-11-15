@@ -171,6 +171,7 @@ function applyPalette() {
 
 // Widgets da tela inicial: usam um tom escuro da cor do app (e um tom claro no botão play).
 let lastWidgetColors = "";
+const pendingWidgetColors = new Set();
 function syncWidgetColors(h, sat) {
   if (!MN || typeof MN.widgetInfo !== "function") return;
   try {
@@ -184,15 +185,24 @@ function syncWidgetColors(h, sat) {
       hex(hsl(h, 70, 82)),  // texto secundário
       hex(hsl(h, 100, 90))  // botão play
     ].join(",");
-    if (colors === lastWidgetColors) return;
-    lastWidgetColors = colors;
+    if (colors === lastWidgetColors || pendingWidgetColors.has(colors)) return;
     const r = MN.widgetInfo({ id: "", favorite: false, colors });
-    if (r && typeof r.catch === "function") r.catch(() => {}); // APK antigo sem o método
+    // Só deduplicar quando a ponte assíncrona confirmar a aplicação.
+    if (!r || typeof r.then !== "function") return;
+    pendingWidgetColors.add(colors);
+    r.then(() => {
+      lastWidgetColors = colors;
+      pendingWidgetColors.delete(colors);
+    }, e => {
+      pendingWidgetColors.delete(colors);
+      logErr("tema:widgets", e);
+    });
   } catch (e) { logErr("tema:widgets", e); }
 }
 
 // Android: a faixa de baixo do sistema usa a mesma cor do fundo do app.
 let lastSystemBars = "";
+let pendingSystemBars = "";
 function syncSystemBars(css, light) {
   if (!MN || typeof MN.setSystemBars !== "function") return;
   try {
@@ -200,10 +210,18 @@ function syncSystemBars(css, light) {
     ctx.fillStyle = css;
     const hex = ctx.fillStyle; // o canvas converte para #rrggbb
     const key = hex + (light ? "L" : "D");
-    if (key === lastSystemBars) return;
-    lastSystemBars = key;
+    if (key === lastSystemBars || key === pendingSystemBars) return;
     const r = MN.setSystemBars({ navColor: hex, light: !!light });
-    if (r && typeof r.catch === "function") r.catch(() => {}); // APK antigo sem o método
+    // Não gravar a chave até que o plugin confirme; a rejeição mantém o retry possível.
+    if (!r || typeof r.then !== "function") return;
+    pendingSystemBars = key;
+    r.then(() => {
+      lastSystemBars = key;
+      if (pendingSystemBars === key) pendingSystemBars = "";
+    }, e => {
+      if (pendingSystemBars === key) pendingSystemBars = "";
+      logErr("tema:systembars", e);
+    });
   } catch (e) { logErr("tema:systembars", e); }
 }
 

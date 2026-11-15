@@ -90,6 +90,7 @@ async function deleteSong(song) {
 
   queue = queue.filter(id => id !== song.id);
   playHistory = playHistory.filter(id => id !== song.id);
+  if (typeof dropSavedQueueIfMissing === "function") dropSavedQueueIfMissing();
   const deletedFromStorage = await dbDelete(song.id);
 
   nativeRefreshUpcoming();

@@ -95,15 +95,13 @@ final class NyxWidgets {
     }
 
     /** O app informou a música atual, se ela é favorita e (opcional) as cores do tema. */
-    static void setInfo(Context c, String id, boolean favorite, String colors) {
-        try {
-            Context app = c.getApplicationContext();
-            SharedPreferences.Editor e = prefs(app).edit();
-            if (id != null && !id.isEmpty()) e.putString("id", id).putBoolean("favorite", favorite);
-            if (colors != null && !colors.isEmpty()) e.putString("colors", colors);
-            e.apply();
-            if (hasWidgets(app)) refresh(app);
-        } catch (Exception ignored) {}
+    static boolean setInfo(Context c, String id, boolean favorite, String colors) {
+        Context app = c.getApplicationContext();
+        SharedPreferences.Editor e = prefs(app).edit();
+        if (id != null && !id.isEmpty()) e.putString("id", id).putBoolean("favorite", favorite);
+        if (colors != null && !colors.isEmpty()) e.putString("colors", colors);
+        e.apply();
+        return !hasWidgets(app) || refresh(app);
     }
 
     /** Cores do tema: container, container dos botões, texto, texto secundário, play (padrão: azul do Nyx). */
@@ -189,21 +187,23 @@ final class NyxWidgets {
     }
 
     // ---------- desenho ----------
-    static void refresh(Context c) {
+    static boolean refresh(Context c) {
         try {
             Context app = c.getApplicationContext();
             AppWidgetManager m = AppWidgetManager.getInstance(app);
             lastRefreshAt = SystemClock.elapsedRealtime();
             SharedPreferences p = prefs(app);
-            update(app, m, NyxWidgetA.class, 'A', p);
-            update(app, m, NyxWidgetB.class, 'B', p);
-            update(app, m, NyxWidgetC.class, 'C', p);
-        } catch (Exception ignored) {}
+            boolean a = update(app, m, NyxWidgetA.class, 'A', p);
+            boolean b = update(app, m, NyxWidgetB.class, 'B', p);
+            boolean cResult = update(app, m, NyxWidgetC.class, 'C', p);
+            return a && b && cResult;
+        } catch (Exception ignored) { return false; }
     }
 
     /** Cada widget na tela pode ter um tamanho diferente: escolhe o layout e desenha um por um. */
-    private static void update(Context c, AppWidgetManager m, Class<?> cls, char kind, SharedPreferences p) {
+    private static boolean update(Context c, AppWidgetManager m, Class<?> cls, char kind, SharedPreferences p) {
         int[] ids = m.getAppWidgetIds(new ComponentName(c, cls));
+        boolean success = true;
         for (int id : ids) {
             try {
                 android.os.Bundle o = m.getAppWidgetOptions(id);
@@ -215,8 +215,9 @@ final class NyxWidgets {
                 else if (kind == 'B') layout = hDp >= 215 ? R.layout.widget_b_tall : R.layout.widget_b;
                 else layout = R.layout.widget_c;
                 m.updateAppWidget(id, build(c, cls, kind, layout, p, wDp, hDp));
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) { success = false; }
         }
+        return success;
     }
 
     private static RemoteViews build(Context c, Class<?> cls, char kind, int layout, SharedPreferences p, int wDp, int hDp) {
