@@ -377,8 +377,8 @@ function directorySettingsGroup(title, description, folders, kind) {
 
   if (!folders.length) {
     sec.appendChild(el("div", "directory-empty", kind === "ignored"
-      ? "Nenhum diretório ignorado"
-      : "Nenhum diretório adicionado"));
+      ? "Nenhuma pasta ignorada"
+      : "Nenhuma pasta monitorada"));
   }
   folders.forEach(folder => {
     const row = el("div", "set-row directory-row");
@@ -405,14 +405,14 @@ function pageBiblioteca() {
   const out = [];
   if (MN && typeof addDirectory === "function") {
     out.push(directorySettingsGroup(
-      "Lista de Diretórios",
-      "Pastas de música que o Nyx verifica automaticamente.",
+      "Pastas monitoradas",
+      "O Nyx verifica estas pastas ao abrir ou retomar o app.",
       getWatchedFolders(),
       "watched"
     ));
     out.push(directorySettingsGroup(
-      "Diretórios ignorados",
-      "Pastas dentro dos diretórios monitorados que não devem ser varridas.",
+      "Pastas ignoradas",
+      "O Nyx pula estas pastas nas novas varreduras; músicas já importadas permanecem.",
       getIgnoredFolders(),
       "ignored"
     ));
@@ -421,14 +421,14 @@ function pageBiblioteca() {
       const mediaRow = el("button", "set-row");
       const mediaText = el("div", "set-row-text");
       mediaText.append(el("strong", "", "Pastas de áudio do aparelho"), el("span", "",
-        "Encontre áudios no dispositivo e escolha o que deve ser ignorado"));
+        "Busca áudio em todo o aparelho e permite escolher pastas para ignorar."));
       mediaRow.append(mediaText, el("span", "material-symbols-rounded", "folder"));
       mediaRow.onclick = openMediaAudioManager;
       mediaSec.appendChild(mediaRow);
       if (lsGet("mediaAudioEnabled", false)) {
         const refreshRow = el("button", "set-row");
         const refreshText = el("div", "set-row-text");
-        refreshText.append(el("strong", "", "Atualizar áudios do aparelho"), el("span", "", "Procura músicas novas sem remover as já importadas"));
+        refreshText.append(el("strong", "", "Atualizar biblioteca do aparelho"), el("span", "", "Procura músicas novas no aparelho; as já importadas permanecem."));
         refreshRow.append(refreshText, el("span", "material-symbols-rounded", "refresh"));
         refreshRow.onclick = () => syncMediaAudioLibrary(true);
         mediaSec.appendChild(refreshRow);
@@ -439,7 +439,7 @@ function pageBiblioteca() {
       const syncSec = el("div", "set-sec");
       const syncRow = el("button", "set-row");
       const syncText = el("div", "set-row-text");
-      syncText.append(el("strong", "", "Atualizar agora"), el("span", "", "Procura músicas novas nos diretórios adicionados"));
+      syncText.append(el("strong", "", "Verificar pastas monitoradas"), el("span", "", "Procura músicas novas nas pastas monitoradas."));
       syncRow.append(syncText, el("span", "material-symbols-rounded", "refresh"));
       syncRow.onclick = () => syncWatchedFolder(true);
       syncSec.appendChild(syncRow);
@@ -450,21 +450,32 @@ function pageBiblioteca() {
   const permRow = el("button", "set-row");
   const permText = el("div", "set-row-text");
   permText.append(
-    el("strong", "", "Importação e controles"),
-    el("span", "", "Escolha arquivos e veja o suporte do navegador")
+    el("strong", "", "Importação manual e controles"),
+    el("span", "", "Importe arquivos ou uma pasta sem ativar o monitoramento automático.")
   );
   permRow.append(permText, el("span", "material-symbols-rounded", "folder"));
   permRow.onclick = () => openPermissions(false);
   sec.appendChild(permRow);
   out.push(sec);
 
-  const genreSec = el("div", "set-sec");
+  const genreSec = el("details", "set-sec set-disclosure");
+  const summary = el("summary", "set-row set-disclosure-summary");
+  const summaryText = el("div", "set-row-text");
+  summaryText.append(
+    el("strong", "", "Manutenção"),
+    el("span", "", "Ferramentas para revisar os dados da biblioteca.")
+  );
+  summary.append(summaryText, el("span", "material-symbols-rounded set-disclosure-icon", "expand_more"));
+  genreSec.appendChild(summary);
+
+  const genreBody = el("div", "set-disclosure-body");
   const genreRow = el("button", "set-row");
   const genreText = el("div", "set-row-text");
   genreText.append(el("strong", "", "Ler gêneros das músicas"), el("span", "", "Procura o gênero nas etiquetas das músicas que já estão na biblioteca"));
   genreRow.append(genreText, el("span", "material-symbols-rounded", "category"));
   genreRow.onclick = () => scanGenres(true);
-  genreSec.appendChild(genreRow);
+  genreBody.appendChild(genreRow);
+  genreSec.appendChild(genreBody);
   out.push(genreSec);
   return out;
 }

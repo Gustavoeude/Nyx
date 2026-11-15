@@ -717,22 +717,6 @@ body[data-page="library"] .topbar {
   font-variation-settings: "FILL" 1;
 }
 
-/* botão de adicionar (FAB estendido) */
-.library-add-button {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 24px 22px;
-  padding: 0 24px 0 18px;
-  height: 56px;
-  border-radius: var(--shape-m);
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
-  font-weight: 500;
-  font-size: 15px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, .25);
-}
-
 .empty-state {
   text-align: center;
   padding: 35px 15px;
@@ -1953,6 +1937,19 @@ body.disc .fp-cover::after {
   color: var(--md-on-surface-variant);
 }
 
+.set-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.set-disclosure > summary::-webkit-details-marker { display: none; }
+.set-disclosure-icon { transition: transform .2s var(--ease); }
+.set-disclosure[open] .set-disclosure-icon { transform: rotate(180deg); }
+.set-disclosure-body {
+  margin: 0 0 8px 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--md-outline-variant);
+}
+
 .directory-settings { padding-top: 8px; }
 .directory-group-head {
   display: flex;
@@ -2242,7 +2239,6 @@ main { overflow-x: clip; }
 .stagger .playlist-bar,
 .stagger .home-stats,
 .stagger .home-section,
-.stagger .library-add-button,
 .stagger .empty-state { animation: riseIn .4s var(--spring-soft) backwards; }
 
 .stagger .home-top { animation-delay: 0s; }
@@ -3122,7 +3118,6 @@ body[data-page="library"] .topbar { display: none; }
   border-radius: 3px 3px 0 0;
   background: var(--md-primary);
 }
-.library-add-button { display: none; }
 #libraryPage .filters { padding-top: 16px; }
 #libraryPage .song-list { padding-top: 8px; }
 body::before { display: none !important; }
@@ -3199,17 +3194,6 @@ body::before { display: none !important; }
   padding-bottom: 16px;
 }
 
-.library-add-button {
-  margin: 18px 16px 24px;
-  border-radius: 20px 28px 20px 28px;
-  background: var(--md-primary-container);
-  box-shadow: none;
-  transition: border-radius .35s var(--m3e-spring), transform .15s ease;
-}
-.library-add-button:active {
-  border-radius: 28px;
-  transform: scale(.97);
-}
 .empty-state button {
   border-radius: 20px 14px 20px 14px;
 }
@@ -3431,7 +3415,7 @@ body:not(.disc) .fp-cover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .top-button, .home-settings, .library-add-button, .nav-fab, .nav-icon, .fp-play, .now-play, .filter, .swatch {
+  .top-button, .home-settings, .nav-fab, .nav-icon, .fp-play, .now-play, .filter, .swatch {
     transition: none;
   }
 }
