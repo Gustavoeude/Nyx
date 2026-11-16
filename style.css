@@ -1576,7 +1576,20 @@ body[data-page="library"] .topbar {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 3px;
+}
+
+.snackbar-kicker {
+  display: block;
+  max-width: 100%;
+  color: var(--md-on-surface);
+  opacity: .76;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .snackbar-title {

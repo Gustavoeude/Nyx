@@ -434,6 +434,37 @@ const TOAST_ICONS = {
   error: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>'
 };
 
+const TOAST_CONTEXT_COPY = {
+  app: { pt: "NYX", en: "NYX", es: "NYX" },
+  library: { pt: "BIBLIOTECA", en: "LIBRARY", es: "BIBLIOTECA" },
+  import: { pt: "IMPORTAÇÃO", en: "IMPORT", es: "IMPORTACIÓN" },
+  playback: { pt: "REPRODUÇÃO", en: "PLAYBACK", es: "REPRODUCCIÓN" },
+  playlist: { pt: "PLAYLISTA", en: "PLAYLIST", es: "LISTA" },
+  lyrics: { pt: "LETRAS", en: "LYRICS", es: "LETRAS" },
+  appearance: { pt: "APARÊNCIA", en: "APPEARANCE", es: "APARIENCIA" },
+  fonts: { pt: "FONTES", en: "FONTS", es: "FUENTES" },
+  folders: { pt: "PASTAS", en: "FOLDERS", es: "CARPETAS" },
+  timer: { pt: "TEMPORIZADOR", en: "SLEEP TIMER", es: "TEMPORIZADOR" },
+  transition: { pt: "TRANSIÇÃO", en: "TRANSITION", es: "TRANSICIÓN" },
+  diagnostics: { pt: "DIAGNÓSTICO", en: "DIAGNOSTICS", es: "DIAGNÓSTICO" },
+  permissions: { pt: "PERMISSÕES", en: "PERMISSIONS", es: "PERMISOS" }
+};
+
+const TOAST_TONE_COPY = {
+  info: { pt: "INFO", en: "INFO", es: "INFO" },
+  success: { pt: "SUCESSO", en: "SUCCESS", es: "ÉXITO" },
+  warning: { pt: "AVISO", en: "NOTICE", es: "AVISO" },
+  error: { pt: "ERRO", en: "ERROR", es: "ERROR" }
+};
+
+const TOAST_KICKER_PRESETS = {
+  syncComplete: { pt: "SINCRONIZAÇÃO CONCLUÍDA", en: "SYNC COMPLETE", es: "SINCRONIZACIÓN COMPLETADA" },
+  importComplete: { pt: "IMPORTAÇÃO CONCLUÍDA", en: "IMPORT COMPLETE", es: "IMPORTACIÓN COMPLETADA" },
+  importPartial: { pt: "IMPORTAÇÃO PARCIAL", en: "PARTIAL IMPORT", es: "IMPORTACIÓN PARCIAL" },
+  importFailed: { pt: "FALHA NA IMPORTAÇÃO", en: "IMPORT FAILED", es: "ERROR DE IMPORTACIÓN" },
+  updateInterrupted: { pt: "ATUALIZAÇÃO INTERROMPIDA", en: "UPDATE INTERRUPTED", es: "ACTUALIZACIÓN INTERRUMPIDA" }
+};
+
 function toastToneFor(message) {
   const text = String(message || "").toLocaleLowerCase("pt-BR");
   if (/atualização concluída com alguns erros|alguns erros|algumas falhas/.test(text) || (/alguns|algumas/.test(text) && /(não puderam|não foram|falh|não conseguiram)/.test(text))) return "warning";
@@ -452,6 +483,45 @@ function translateToastMessage(message) {
     }
   } catch (e) { /* o tradutor pode ainda não ter sido inicializado */ }
   return message;
+}
+
+function toastLanguage() {
+  try {
+    if (currentLang === "en" || currentLang === "es") return currentLang;
+  } catch (e) { /* usa português até o tradutor inicializar */ }
+  return "pt";
+}
+
+function toastContextFor(message, explicitContext) {
+  if (Object.prototype.hasOwnProperty.call(TOAST_CONTEXT_COPY, explicitContext)) return explicitContext;
+  const text = String(message || "").toLocaleLowerCase("pt-BR");
+  if (/temporizador|sleep timer|\btimer\b|música.*pausar|music.*pause/.test(text)) return "timer";
+  if (/transição suave|crossfade|\btransition\b/.test(text)) return "transition";
+  if (/playlist|lista de reprodução/.test(text)) return "playlist";
+  if (/letra|letras|\blrc\b|\blyrics?\b/.test(text)) return "lyrics";
+  if (/capa|cover|papel de parede|wallpaper|imagem|\bimage\b|aparência|appearance|\btema\b|\btheme\b/.test(text)) return "appearance";
+  if (/(?:fonte|font|fuente|tipograf)[a-záéíóúãõç]*/.test(text) && !/fonte monitorada|monitored source/.test(text)) return "fonts";
+  if (/diretório|diretorio|pastas?|folders?|\bdirectory\b/.test(text)) return "folders";
+  if (/permiss|permission|permita|acesso aos áudios|audio access|allow access/.test(text)) return "permissions";
+  if (/erro registrado|diagn[oó]stic|\blog\b|copiad|copied|armazenamento local|local storage/.test(text)) return "diagnostics";
+  if (/aleatório|aleatorio|shuffle|repet|player nativo|native player|reprodução|playback|preparando a música|preparing.*music|tela de bloqueio|lock screen|\bfila\b|\bqueue\b/.test(text)) return "playback";
+  if (/biblioteca|library|media store|fonte monitorada|monitored source|gênero|genero|genre/.test(text)) return "library";
+  if (/import|áudio|audio|música nova|música (?:foi )?(?:adicionad|importad)|new song|new audio/.test(text)) return "import";
+  return "app";
+}
+
+function toastKickerFor(message, tone, explicitContext) {
+  const language = toastLanguage();
+  const context = toastContextFor(message, explicitContext);
+  const text = String(message || "").toLocaleLowerCase("pt-BR");
+  if (context === "library" && tone === "success") return TOAST_KICKER_PRESETS.syncComplete[language];
+  if (context === "import" && tone === "success") return TOAST_KICKER_PRESETS.importComplete[language];
+  if (context === "import" && tone === "warning") return TOAST_KICKER_PRESETS.importPartial[language];
+  if (context === "import" && tone === "error") return TOAST_KICKER_PRESETS.importFailed[language];
+  if (context === "library" && tone === "error" && /atualiz|refresh|update|sync/.test(text)) {
+    return TOAST_KICKER_PRESETS.updateInterrupted[language];
+  }
+  return TOAST_CONTEXT_COPY[context][language] + " · " + TOAST_TONE_COPY[tone][language];
 }
 
 function toastCopyParts(message) {
@@ -504,16 +574,19 @@ function showToast(message, options = {}) {
 
   let icon = bar.querySelector(".snackbar-icon");
   let copyWrap = bar.querySelector(".snackbar-copy");
+  let kicker = bar.querySelector(".snackbar-kicker");
   let title = bar.querySelector(".snackbar-title");
   let detail = bar.querySelector(".snackbar-detail");
-  if (!icon || !copyWrap || !title || !detail) {
+  if (!icon || !copyWrap || !kicker || !title || !detail) {
     bar.replaceChildren();
     icon = el("span", "snackbar-icon");
     icon.setAttribute("aria-hidden", "true");
     copyWrap = el("span", "snackbar-copy");
+    kicker = el("span", "snackbar-kicker");
+    kicker.setAttribute("aria-hidden", "true");
     title = el("span", "snackbar-title");
     detail = el("span", "snackbar-detail");
-    copyWrap.append(title, detail);
+    copyWrap.append(kicker, title, detail);
     bar.append(icon, copyWrap);
   }
 
@@ -521,6 +594,7 @@ function showToast(message, options = {}) {
   const tone = Object.prototype.hasOwnProperty.call(TOAST_ICONS, requestedTone)
     ? requestedTone
     : toastToneFor(text);
+  const kickerText = toastKickerFor(text, tone, safeOptions.context);
   const requestedDuration = Number(safeOptions.duration);
   const duration = Number.isFinite(requestedDuration)
     ? Math.max(1000, Math.min(10000, requestedDuration))
@@ -529,7 +603,7 @@ function showToast(message, options = {}) {
   bar.setAttribute("role", "status");
   bar.setAttribute("aria-live", "polite");
   bar.setAttribute("aria-atomic", "true");
-  bar.setAttribute("aria-label", displayText);
+  bar.setAttribute("aria-label", kickerText + ". " + displayText);
   if (typeof translateString === "function") bar.setAttribute("data-notr", "");
   else bar.removeAttribute("data-notr");
   bar.dataset.tone = tone;
@@ -537,6 +611,7 @@ function showToast(message, options = {}) {
   bar._toastOptions = { ...safeOptions };
   bar._toastExpiresAt = Date.now() + duration;
   icon.innerHTML = TOAST_ICONS[tone];
+  kicker.textContent = kickerText;
   title.textContent = copy.title;
   detail.textContent = copy.detail;
   detail.hidden = !copy.detail;
