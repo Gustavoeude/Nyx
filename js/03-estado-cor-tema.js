@@ -19,6 +19,7 @@ let libraryGroup = null; // { type, key } ao abrir um álbum/artista
 let playlists = lsGet("playlists", []);
 let mixMode = lsGet("mixMode", "plays"); // plays | recent
 let manualTheme = lsGet("manualTheme", null);
+if (manualTheme !== "light" && manualTheme !== "dark") manualTheme = "dark";
 let seeking = false;
 let lyricsView = false;
 let fpOpen = false;
@@ -46,7 +47,7 @@ function savePlaylists() {
 /* ==========================================================
    Cor dinâmica (Material 3) — extraída da capa
    ========================================================== */
-const DEFAULT_SEED = { h: 341, s: 0.76 }; // vinho/rosa do tutorial (Blood Bargain)
+const DEFAULT_SEED = { h: 84, s: 0.78 }; // lima expressivo até uma capa fornecer sua cor dinâmica
 const rootStyle = document.documentElement.style;
 
 function rgbToHsl(r, g, b) {
@@ -127,42 +128,64 @@ function applyPalette() {
   const h = Math.round(seed.h);
   const sat = Math.round(Math.min(Math.max(seed.s, 0.04), 0.8) * 100);
   const set = (name, value) => rootStyle.setProperty(name, value);
-  const k = f => Math.round(sat * f);
+  const hue = offset => ((h + offset) % 360 + 360) % 360;
+  const surfaceHue = hue(180);
+  const secondaryHue = hue(190);
+  const tertiaryHue = hue(265);
+  const primaryChroma = Math.round(Math.min(88, Math.max(18, sat * 0.92)));
+  const secondaryChroma = Math.round(Math.min(62, Math.max(26, sat * 0.62)));
+  const tertiaryChroma = Math.round(Math.min(74, Math.max(38, sat * 0.76)));
 
   if (!light) {
-    set("--md-primary", hsl(h, Math.round(sat * 0.88), 52));
-    set("--md-on-primary", hsl(h, Math.min(sat + 10, 100), 10));
-    set("--md-primary-container", hsl(h, sat, 26));
-    set("--md-on-primary-container", hsl(h, 100, 93));
-    set("--md-secondary-container", hsl(h, Math.round(sat * 0.8), 15));
-    set("--md-on-secondary-container", hsl(h, 100, 94));
+    set("--md-primary", hsl(h, primaryChroma, 68));
+    set("--md-on-primary", hsl(h, Math.round(primaryChroma * 0.24), 11));
+    set("--md-primary-container", hsl(h, Math.round(primaryChroma * 0.62), 19));
+    set("--md-on-primary-container", hsl(h, Math.max(34, Math.round(primaryChroma * 0.76)), 93));
+    set("--md-secondary", hsl(secondaryHue, secondaryChroma, 77));
+    set("--md-on-secondary", hsl(secondaryHue, Math.round(secondaryChroma * 0.28), 11));
+    set("--md-secondary-container", hsl(secondaryHue, Math.round(secondaryChroma * 0.5), 16));
+    set("--md-on-secondary-container", hsl(secondaryHue, Math.min(82, Math.round(secondaryChroma * 1.18)), 92));
+    set("--md-tertiary", hsl(tertiaryHue, tertiaryChroma, 71));
+    set("--md-on-tertiary", hsl(tertiaryHue, Math.round(tertiaryChroma * 0.25), 11));
+    set("--md-tertiary-container", hsl(tertiaryHue, Math.round(tertiaryChroma * 0.48), 18));
+    set("--md-on-tertiary-container", hsl(tertiaryHue, Math.round(tertiaryChroma * 0.9), 93));
     const am = settings.amoled;
-    set("--md-surface", am ? "#000000" : hsl(h, Math.min(sat + 15, 100), 6));
-    set("--md-surface-container", am ? hsl(h, k(0.6), 5) : hsl(h, k(0.8), 10.5));
-    set("--md-surface-container-high", am ? hsl(h, k(0.6), 9) : hsl(h, k(0.78), 14));
-    set("--md-surface-container-highest", am ? hsl(h, k(0.6), 13) : hsl(h, k(0.75), 18));
-    set("--md-on-surface", hsl(h, 100, 95));
-    set("--md-on-surface-variant", hsl(h, 42, 66));
-    set("--md-outline-variant", hsl(h, 40, 24));
-    set("--glow", "hsl(" + h + " " + k(0.75) + "% 30% / " + (settings.amoled ? ".4" : ".6") + ")");
+    set("--md-surface", am ? "#000000" : hsl(surfaceHue, 18, 5));
+    set("--md-surface-container", am ? hsl(surfaceHue, 18, 4) : hsl(surfaceHue, 18, 10));
+    set("--md-surface-container-high", am ? hsl(surfaceHue, 18, 8) : hsl(surfaceHue, 17, 14));
+    set("--md-surface-container-highest", am ? hsl(surfaceHue, 18, 12) : hsl(surfaceHue, 16, 18));
+    set("--md-on-surface", hsl(surfaceHue, 10, 96));
+    set("--md-on-surface-variant", hsl(surfaceHue, 18, 72));
+    set("--md-outline-variant", hsl(surfaceHue, 18, 28));
+    set("--md-error", "#ffb4ab");
+    set("--md-warning", "#f5c76b");
+    set("--glow", "hsl(" + h + " " + primaryChroma + "% 58% / " + (settings.amoled ? ".24" : ".18") + ")");
   } else {
-    set("--md-primary", hsl(h, sat, 38));
+    set("--md-primary", hsl(h, primaryChroma, 36));
     set("--md-on-primary", "#ffffff");
-    set("--md-primary-container", hsl(h, Math.min(sat + 15, 100), 88));
-    set("--md-on-primary-container", hsl(h, sat, 14));
-    set("--md-secondary-container", hsl(h, k(0.4), 88));
-    set("--md-on-secondary-container", hsl(h, k(0.5), 14));
-    set("--md-surface", hsl(h, k(0.3), 97));
-    set("--md-surface-container", hsl(h, k(0.28), 94));
-    set("--md-surface-container-high", hsl(h, k(0.26), 91));
-    set("--md-surface-container-highest", hsl(h, k(0.26), 88));
-    set("--md-on-surface", hsl(h, 12, 10));
-    set("--md-on-surface-variant", hsl(h, 8, 34));
-    set("--md-outline-variant", hsl(h, 10, 78));
-    set("--glow", "hsl(" + h + " " + Math.min(sat + 15, 100) + "% 80% / .75)");
+    set("--md-primary-container", hsl(h, Math.min(90, Math.round(primaryChroma * 0.48)), 90));
+    set("--md-on-primary-container", hsl(h, Math.max(22, Math.round(primaryChroma * 0.72)), 15));
+    set("--md-secondary", hsl(secondaryHue, secondaryChroma, 40));
+    set("--md-on-secondary", "#ffffff");
+    set("--md-secondary-container", hsl(secondaryHue, Math.round(secondaryChroma * 0.36), 92));
+    set("--md-on-secondary-container", hsl(secondaryHue, Math.max(22, Math.round(secondaryChroma * 0.7)), 15));
+    set("--md-tertiary", hsl(tertiaryHue, tertiaryChroma, 39));
+    set("--md-on-tertiary", "#ffffff");
+    set("--md-tertiary-container", hsl(tertiaryHue, Math.round(tertiaryChroma * 0.36), 92));
+    set("--md-on-tertiary-container", hsl(tertiaryHue, Math.max(22, Math.round(tertiaryChroma * 0.7)), 15));
+    set("--md-surface", hsl(surfaceHue, 16, 98));
+    set("--md-surface-container", hsl(surfaceHue, 18, 95));
+    set("--md-surface-container-high", hsl(surfaceHue, 20, 92));
+    set("--md-surface-container-highest", hsl(surfaceHue, 22, 88));
+    set("--md-on-surface", hsl(surfaceHue, 10, 10));
+    set("--md-on-surface-variant", hsl(surfaceHue, 12, 34));
+    set("--md-outline-variant", hsl(surfaceHue, 12, 78));
+    set("--md-error", "#b3261e");
+    set("--md-warning", "#8a5200");
+    set("--glow", "hsl(" + h + " " + primaryChroma + "% 78% / .26)");
   }
 
-  const themeColor = !light && settings.amoled ? "#000000" : hsl(h, light ? k(0.3) : k(0.25), light ? 97 : 7);
+  const themeColor = light ? hsl(surfaceHue, 16, 98) : settings.amoled ? "#000000" : hsl(surfaceHue, 18, 5);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", themeColor);
   syncSystemBars(themeColor, light);
@@ -261,8 +284,8 @@ function applyTheme() {
     : manualTheme === "light";
 
   document.body.classList.toggle("light", light);
-  setIcon($("themeBtn"), light ? "dark_mode" : "light_mode");
-  if ($("homeTheme")) setIcon($("homeTheme"), light ? "dark_mode" : "light_mode");
+  setIcon($("themeBtn"), light ? "light_mode" : "dark_mode");
+  if ($("homeTheme")) setIcon($("homeTheme"), light ? "light_mode" : "dark_mode");
   applyPalette();
 }
 
