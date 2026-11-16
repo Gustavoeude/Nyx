@@ -416,7 +416,7 @@ lrcInput.addEventListener("change", async () => {
 
   const song = getSong(lrcTargetId !== null ? lrcTargetId : currentId);
   if (!song) {
-    showToast("Escolha uma música primeiro");
+    showToast("Escolha uma música primeiro", { context: "lyrics" });
     return;
   }
 
