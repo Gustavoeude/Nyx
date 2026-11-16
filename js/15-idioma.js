@@ -513,6 +513,7 @@ function applyLanguage() {
   try { translateTree(document.body); } catch (e) { logErr("idioma:aplicar", e); }
   langBusy = false;
   startLangObserver();
+  if (typeof refreshToastLanguage === "function") refreshToastLanguage();
 }
 
 function languageSummary() {
