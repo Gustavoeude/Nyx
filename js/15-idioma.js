@@ -193,7 +193,7 @@ const LANG_DICT = {
   "Idioma": ["Language", "Idioma"], "Usa o idioma do seu celular": ["Uses your phone's language", "Usa el idioma de tu teléfono"], "Automático": ["Automatic", "Automático"], "Seu nome": ["Your name", "Tu nombre"],
   "Seu nome e saudação": ["Your name and greeting", "Tu nombre y saludo"], "Como você quer ser chamado?": ["What should we call you?", "¿Cómo quieres que te llamemos?"],
   "Importar músicas e pastas": ["Import songs and folders", "Importar canciones y carpetas"],
-  "Cor do app, fonte, preto total, capa em disco": ["App color, font, true black, disc cover", "Color de la app, fuente, negro total, carátula en disco"],
+  "Cor do app, fonte, preto total, papel de parede": ["App color, font, true black, wallpaper", "Color de la app, fuente, negro total, fondo de pantalla"],
   "Player nativo e segundo plano": ["Native player and background", "Reproductor nativo y segundo plano"],
   "Deslizar entre páginas e gestos": ["Page swiping and gestures", "Deslizar entre páginas y gestos"],
   "Buscas online de letras e capas": ["Online lyrics and cover lookups", "Búsquedas en línea de letras y carátulas"],

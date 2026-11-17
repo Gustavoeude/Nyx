@@ -1,7 +1,7 @@
 "use strict";
 
 /* ==========================================================
-   Ajustes (cor do app, preto total, capa em disco, nome)
+   Ajustes (cor do app, preto total, papel de parede, nome)
    ========================================================== */
 const ACCENTS = [
   { id: "auto", name: "Da capa da música" },
@@ -96,7 +96,6 @@ function chooseWallpaperFile() {
 function applySettings() {
   document.body.classList.toggle("amoled", !!settings.amoled);
   applyWallpaper();
-  document.body.classList.toggle("disc", !!settings.disc);
   applyShapes();
   applyFont();
   renderGreeting();
@@ -251,9 +250,6 @@ function pageAparencia(go) {
   sec.append(swatches, hint);
   sec.appendChild(
     switchRow("Preto total", "Fundo preto puro (economiza bateria em tela AMOLED)", "amoled")
-  );
-  sec.appendChild(
-    switchRow("Capa em disco", "A capa vira um disco que gira enquanto toca", "disc")
   );
 
   const fontSec = el("div", "set-sec");
@@ -666,7 +662,7 @@ function renderSettingsPage(box, go) {
     list.append(
       catRow("person", 215, "Perfil", settings.name ? settings.name : "Seu nome e saudação", editProfileName),
       catRow("library_music", 205, "Biblioteca", "Músicas encontradas no aparelho", () => go("biblioteca")),
-      catRow("light_mode", 335, "Aparência", "Cor do app, fonte, preto total, capa em disco", () => go("aparencia"))
+      catRow("light_mode", 335, "Aparência", "Cor do app, fonte, preto total, papel de parede", () => go("aparencia"))
     );
     list.appendChild(catRow("translate", 265, "Idioma", languageSummary(), () => go("idioma")));
     list.appendChild(catRow("music_note", 350, "Reprodução", MN ? "Temporizador, equalizador e player nativo" : "Temporizador de desligar", () => go("reproducao")));
