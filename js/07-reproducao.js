@@ -333,14 +333,29 @@ function sendNative() {
   } catch (e) { logErr("reproducao:311", e); }
 }
 
-// capa quadrada (JPEG 640px em base64) para a notificação e a tela de bloqueio
+// Prepara a capa para a notificação e a tela de bloqueio sem reduzir a nitidez.
 function nativeCoverFor(song) {
   if (!song.cover) return Promise.resolve("");
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
       try {
-        const size = 640;
+        const original = song.coverBlob;
+        // Se a capa já é quadrada, tem resolução suficiente e não é enorme,
+        // preserva os bytes originais em vez de recodificar a imagem.
+        if (original && img.width === img.height && img.width <= 1024 && original.size <= 1500000) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const data = String(reader.result || "");
+            resolve(data.slice(data.indexOf(",") + 1) || "");
+          };
+          reader.onerror = () => resolve("");
+          reader.readAsDataURL(original);
+          return;
+        }
+        // 1024px evita o upscaling agressivo de capas pequenas e mantém mais
+        // detalhes nas capas grandes; a qualidade alta reduz artefatos JPEG.
+        const size = Math.min(1024, Math.max(1, Math.max(img.width, img.height)));
         const c = document.createElement("canvas");
         c.width = c.height = size;
         const x = c.getContext("2d");
@@ -348,7 +363,7 @@ function nativeCoverFor(song) {
         x.imageSmoothingQuality = "high";
         const k = Math.max(size / img.width, size / img.height);
         x.drawImage(img, (size - img.width * k) / 2, (size - img.height * k) / 2, img.width * k, img.height * k);
-        resolve(c.toDataURL("image/jpeg", 0.92).split(",")[1] || "");
+        resolve(c.toDataURL("image/jpeg", 0.98).split(",")[1] || "");
       } catch (_) {
         resolve("");
       }
