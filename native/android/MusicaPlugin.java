@@ -767,6 +767,111 @@ public class MusicaPlugin extends Plugin {
         }
     }
 
+
+    /** Consulta global paginada: não precisa enumerar as pastas antes de exibir a biblioteca. */
+    @PluginMethod
+    public void listMediaAudioLibrary(PluginCall call) {
+        try {
+            requireAudioLibraryPermission();
+            boolean modern = Build.VERSION.SDK_INT >= 29;
+            String requestedVolume = call.getString("volumeName", "");
+            long afterId = parseAfterId(call.getString("afterId", "0"));
+            int limit = Math.max(1, Math.min(MEDIA_AUDIO_PAGE_MAX,
+                    call.getInt("limit", MEDIA_AUDIO_PAGE_DEFAULT)));
+            List<String> volumes = new ArrayList<>();
+            if (modern) {
+                Set<String> available = MediaStore.getExternalVolumeNames(getContext());
+                if (available != null) volumes.addAll(available);
+                Collections.sort(volumes);
+            } else {
+                volumes.add(LEGACY_AUDIO_VOLUME);
+            }
+            if (volumes.isEmpty()) throw new java.io.IOException("MediaStore returned no audio volumes");
+            String volume = requestedVolume;
+            if (volume.isEmpty()) volume = volumes.get(0);
+            if (!volumes.contains(volume)) throw new IllegalArgumentException("Unknown MediaStore volume: " + volume);
+
+            Uri collection = modern ? MediaStore.Audio.Media.getContentUri(volume)
+                    : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+            String[] columns = new String[]{
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                    modern ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA,
+                    MediaStore.Audio.Media.MIME_TYPE,
+                    MediaStore.Audio.Media.SIZE,
+                    MediaStore.Audio.Media.DATE_MODIFIED,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.DURATION
+            };
+            String selection = modern
+                    ? MediaStore.Audio.Media.VOLUME_NAME + " = ? AND " + MediaStore.Audio.Media._ID + " > ?"
+                    : MediaStore.Audio.Media._ID + " > ?";
+            String[] args = modern
+                    ? new String[]{volume, Long.toString(afterId)}
+                    : new String[]{Long.toString(afterId)};
+            JSArray resultItems = new JSArray();
+            String nextAfterId = Long.toString(afterId);
+            boolean pageDone = true;
+            try (Cursor cursor = getContext().getContentResolver().query(
+                    collection, columns, selection, args, MediaStore.Audio.Media._ID + " ASC")) {
+                if (cursor == null) throw new java.io.IOException("MediaStore returned a null cursor");
+                int idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+                int nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME);
+                int pathCol = cursor.getColumnIndexOrThrow(modern ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA);
+                int mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE);
+                int sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
+                int modifiedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED);
+                int titleCol = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE);
+                int artistCol = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST);
+                int albumCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+                int durationCol = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION);
+                int returned = 0;
+                while (cursor.moveToNext()) {
+                    if (returned == limit) { pageDone = false; break; }
+                    long id = cursor.getLong(idCol);
+                    String name = cursor.isNull(nameCol) ? "áudio" : cursor.getString(nameCol);
+                    String rawPath = cursor.isNull(pathCol) ? "" : cursor.getString(pathCol);
+                    String relativePath = modern ? normalizeRelativePath(rawPath) : legacyParentPath(rawPath);
+                    String mime = cursor.isNull(mimeCol) ? "application/octet-stream" : cursor.getString(mimeCol);
+                    long size = cursor.isNull(sizeCol) ? 0L : Math.max(0L, cursor.getLong(sizeCol));
+                    long modified = cursor.isNull(modifiedCol) ? 0L : Math.max(0L, cursor.getLong(modifiedCol));
+                    JSObject item = new JSObject();
+                    item.put("id", Long.toString(id));
+                    item.put("uri", ContentUris.withAppendedId(collection, id).toString());
+                    item.put("name", name);
+                    item.put("relativePath", relativePath);
+                    item.put("mimeType", mime);
+                    item.put("size", size);
+                    item.put("lastModified", modified > Long.MAX_VALUE / 1000L ? Long.MAX_VALUE : modified * 1000L);
+                    item.put("title", titleCol >= 0 && !cursor.isNull(titleCol) ? cursor.getString(titleCol) : name.replaceFirst("\\.[^.]+$", ""));
+                    item.put("artist", artistCol >= 0 && !cursor.isNull(artistCol) ? cursor.getString(artistCol) : "Arquivo local");
+                    item.put("album", albumCol >= 0 && !cursor.isNull(albumCol) ? cursor.getString(albumCol) : "");
+                    item.put("genre", "");
+                    item.put("duration", durationCol >= 0 && !cursor.isNull(durationCol) ? cursor.getLong(durationCol) : 0L);
+                    item.put("sourceKey", "android-mediastore::" + volume + "::" + id + "::" + size + "::" + modified);
+                    resultItems.put(item);
+                    nextAfterId = Long.toString(id);
+                    returned++;
+                }
+            }
+            int index = volumes.indexOf(volume);
+            boolean lastVolume = index >= volumes.size() - 1;
+            JSObject response = new JSObject();
+            response.put("items", resultItems);
+            response.put("volumeName", volume);
+            response.put("nextVolume", pageDone && !lastVolume ? volumes.get(index + 1) : volume);
+            response.put("nextAfterId", pageDone && !lastVolume ? "0" : nextAfterId);
+            response.put("done", pageDone && lastVolume);
+            call.resolve(response);
+        } catch (SecurityException e) {
+            call.reject("Audio library access denied or revoked: " + e.getMessage());
+        } catch (Exception e) {
+            call.reject("Could not list global MediaStore audio: " + e.getMessage());
+        }
+    }
+
     private static String normalizeLegacySelectedPath(String path) {
         if (path.isEmpty()) return "";
         if (path.indexOf('\\') >= 0 || path.indexOf('\0') >= 0) {

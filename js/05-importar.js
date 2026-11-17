@@ -804,6 +804,65 @@ async function importMediaAudioFoldersDirect(folders, options = {}) {
   return { processed, expected, added, failed, direct: true };
 }
 
+
+async function importMediaAudioLibraryDirect(options = {}) {
+  const excluded = options.excludedFolders || getMediaAudioImportExclusions();
+  const existing = new Set();
+  songs.forEach(song => {
+    const key = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "");
+    if (key) existing.add(key);
+  });
+  let volumeName = "";
+  let afterId = "";
+  let processed = 0;
+  let added = 0;
+  let failed = 0;
+  let sinceRefresh = 0;
+  let firstRendered = false;
+  let done = false;
+  while (!done) {
+    const page = await MN.listMediaAudioLibrary({ volumeName, afterId, limit: 50 });
+    const items = Array.isArray(page && page.items) ? page.items : [];
+    for (const item of items) {
+      try {
+        const canonical = mediaAudioCanonicalFileKey(page.volumeName, item.relativePath || "", item.name);
+        const excludedItem = mediaAudioFolderIsExcluded({ volumeName: page.volumeName, relativePath: item.relativePath || "" }, excluded);
+        if (!excludedItem && canonical && !existing.has(canonical)) {
+          const song = directMediaAudioSong(item, page.volumeName, canonical);
+          songs.push(song);
+          existing.add(canonical);
+          if (!await dbPut(toRecord(song))) throw new Error("não foi possível salvar a música");
+          added++;
+          if (!firstRendered) {
+            refreshAll();
+            firstRendered = true;
+            sinceRefresh = 0;
+          }
+          if (settings.autoCovers) fetchOnlineCover(song);
+          if (settings.autoLyrics) requestOnlineLyrics(song);
+        }
+      } catch (e) {
+        failed++;
+        logErr("media-audio:global-import", e);
+      }
+      processed++;
+      sinceRefresh++;
+      if (typeof options.onProgress === "function") options.onProgress({ processed, added, failed, item });
+      if (sinceRefresh >= 8) {
+        refreshAll();
+        sinceRefresh = 0;
+      }
+    }
+    done = !!(page && page.done);
+    volumeName = String(page && page.nextVolume || page && page.volumeName || "");
+    afterId = String(page && page.nextAfterId || "0");
+    if (!items.length && !done && volumeName === String(page && page.volumeName || "")) {
+      throw new Error("MediaStore não avançou a paginação global");
+    }
+  }
+  refreshAll();
+  return { processed, added, failed, direct: true };
+}
 async function importMediaAudioFolders(folders, options = {}) {
   if (!MN || typeof MN.listMediaAudioFiles !== "function") {
     throw new Error("A busca de áudios do aparelho não está disponível nesta versão do Nyx.");
@@ -900,16 +959,23 @@ async function runMediaAudioSync(manual) {
     if (manual) showToast("Permita o acesso aos áudios nas configurações do Android para atualizar a biblioteca.");
     return null;
   }
-  const result = await MN.listMediaAudioFolders();
-  const folders = Array.isArray(result && result.folders) ? result.folders : [];
-  setMediaAudioFoldersCache(folders);
   let imported;
   try {
-    imported = typeof MN.listMediaAudioFiles === "function"
-      ? await importMediaAudioFoldersDirect(folders)
-      : await importMediaAudioFolders(folders);
+    if (typeof MN.listMediaAudioLibrary === "function") {
+      imported = await importMediaAudioLibraryDirect();
+    } else {
+      const result = await MN.listMediaAudioFolders();
+      const folders = Array.isArray(result && result.folders) ? result.folders : [];
+      setMediaAudioFoldersCache(folders);
+      imported = typeof MN.listMediaAudioFiles === "function"
+        ? await importMediaAudioFoldersDirect(folders)
+        : await importMediaAudioFolders(folders);
+    }
   } catch (directError) {
     logErr("media-audio:direct-fallback", directError);
+    const result = await MN.listMediaAudioFolders();
+    const folders = Array.isArray(result && result.folders) ? result.folders : [];
+    setMediaAudioFoldersCache(folders);
     imported = await importMediaAudioFolders(folders);
   }
   if (manual) {
