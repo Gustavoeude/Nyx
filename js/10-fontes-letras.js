@@ -222,6 +222,7 @@ function renderLyrics(song) {
     empty.appendChild(el("span", "material-symbols-rounded", "lyrics"));
     const state = lyricsLookupStatus.get(song && song.id);
     const messages = {
+      "reading-local": "Lendo a letra incorporada no arquivo…",
       searching: "Buscando letras online…",
       "not-found": "Não encontramos uma letra correspondente.",
       error: "Não foi possível buscar agora. Verifique a conexão e tente novamente.",
@@ -232,13 +233,13 @@ function renderLyrics(song) {
     message.setAttribute("aria-live", "polite");
     empty.appendChild(message);
 
-    if (state !== "searching") {
+    if (state !== "searching" && state !== "reading-local") {
       const actions = el("div", "lyrics-actions");
       const searchBtn = el("button", "tonal-btn");
       searchBtn.appendChild(el("span", "material-symbols-rounded", "search"));
       searchBtn.appendChild(document.createTextNode("Buscar na internet"));
       searchBtn.onclick = () => {
-        if (song) requestOnlineLyrics(song, true);
+        if (song) requestLyrics(song, true);
       };
       actions.appendChild(searchBtn);
 
@@ -290,7 +291,7 @@ function renderLyrics(song) {
 
 function scrollLyricsToActive() {
   const box = $("fpLyrics");
-  const node = box.children[lrcActive];
+  const node = box.querySelectorAll(".lrc-line")[lrcActive];
   if (!node || !lrcSynced) return;
 
   box.scrollTo({
@@ -320,15 +321,31 @@ function startLyricsSyncLoop() {
 
 const LYRICS_LEAD = 0.25; // a linha acende um pouco antes, para parecer em sincronia
 
+function lyricsVersionKey(lyrics) {
+  const text = String(lyrics || "");
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function lyricsOffsetKey(id) {
+  const song = getSong(id);
+  return String(id) + "::" + lyricsVersionKey(song && song.lyrics);
+}
+
 function lyricsOffsetFor(id) {
   const m = lsGet("lyricsOffsets", {});
-  return Number(m && m[id]) || 0;
+  return Number(m && m[lyricsOffsetKey(id)]) || 0;
 }
 
 function setLyricsOffset(id, v) {
   const m = lsGet("lyricsOffsets", {}) || {};
-  if (Math.abs(v) < 0.05) delete m[id];
-  else m[id] = Math.round(v * 10) / 10;
+  const key = lyricsOffsetKey(id);
+  if (Math.abs(v) < 0.05) delete m[key];
+  else m[key] = Math.round(v * 10) / 10;
   lsSet("lyricsOffsets", m);
 }
 
@@ -349,7 +366,7 @@ function buildLyricsAdjust() {
   const step = d => {
     setLyricsOffset(currentId, lyricsOffsetFor(currentId) + d);
     paint();
-    const nodes = $("fpLyrics").children;
+    const nodes = $("fpLyrics").querySelectorAll(".lrc-line");
     if (nodes[lrcActive]) nodes[lrcActive].classList.remove("active");
     lrcActive = -1;
     syncLyrics(audio.currentTime || 0);
@@ -395,7 +412,7 @@ function syncLyrics(t) {
 
   if (idx === lrcActive) return;
 
-  const nodes = $("fpLyrics").children;
+  const nodes = $("fpLyrics").querySelectorAll(".lrc-line");
   if (nodes[lrcActive]) nodes[lrcActive].classList.remove("active");
   lrcActive = idx;
 
@@ -408,6 +425,7 @@ function syncLyrics(t) {
 audio.addEventListener("playing", startLyricsSyncLoop);
 audio.addEventListener("pause", stopLyricsSyncLoop);
 audio.addEventListener("ended", stopLyricsSyncLoop);
+audio.addEventListener("seeked", () => syncLyrics(audio.currentTime || 0));
 
 lrcInput.addEventListener("change", async () => {
   const file = lrcInput.files && lrcInput.files[0];
@@ -422,15 +440,22 @@ lrcInput.addEventListener("change", async () => {
 
   let lyrics;
   try {
-    lyrics = await file.text();
+    lyrics = (await file.text()).replace(/^\uFEFF/, "").trim();
   } catch {
     showToast("Não consegui ler esse arquivo");
+    return;
+  }
+  if (!lyrics) {
+    showToast("Esse arquivo de letra está vazio");
     return;
   }
 
   song.lyrics = lyrics;
   song.lyricsSource = "lrc";
   song.lyricsSourceId = null;
+  song.lyricsSearchAt = 0;
+  song.lyricsRetryAt = 0;
+  song.lyricsRetryReason = "";
   let persisted = false;
   try {
     persisted = await dbPut(toRecord(song));

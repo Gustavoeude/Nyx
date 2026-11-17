@@ -49,10 +49,25 @@ function lyricsLookupTitle(song) {
 
 function lyricsLookupArtist(song) {
   const artist = normalizeLyricsLookup(song && song.artist);
-  return !artist || ["arquivo local", "artista desconhecido", "unknown"].includes(artist) ? "" : artist;
+  return !artist || ["arquivo local", "artista desconhecido", "unknown", "unknown artist", "various artists", "n a", "na"].includes(artist) ? "" : artist;
 }
-
+function lyricsTitleVariants(value) {
+  const original = normalizeLyricsLookup(value);
+  if (!original) return [];
+  const withoutVersion = original
+    .replace(/\s*\b(remaster(?:ed)?|deluxe|explicit|clean|radio edit|album version|single version|live|acoustic|demo|instrumental)\b.*$/i, "")
+    .trim();
+  return [...new Set([original, withoutVersion].filter(Boolean))];
+}
+function mediaStoreDurationSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // MediaStore.Audio.Media.DURATION é exposto em milissegundos.
+  return n > 1000 ? n / 1000 : n;
+}
 function readLocalTrackDuration(song) {
+  const known = Number(song && song.duration);
+  if (Number.isFinite(known) && known > 0) return Promise.resolve(known);
   if (!song || !song.url) return Promise.resolve(null);
   return new Promise(resolve => {
     const probe = document.createElement("audio");
@@ -79,106 +94,101 @@ function hasSyncedLyrics(song) {
 }
 
 function chooseLyricsRecord(song, records, duration) {
-  const title = normalizeLyricsLookup(lyricsLookupTitle(song));
-  if (!title || !Array.isArray(records)) return null;
+  const titleVariants = lyricsTitleVariants(lyricsLookupTitle(song));
+  if (!titleVariants.length || !Array.isArray(records)) return null;
   const artist = lyricsLookupArtist(song);
-  // Primeiro tenta título + artista exatos. Se o cadastro do artista variar,
-  // mantém os resultados do título e só aceita quando não houver ambiguidade.
-  const titleMatches = records.filter(record =>
-    normalizeLyricsLookup(record.trackName || record.name) === title
-  );
-  if (!titleMatches.length) return null;
-
-  let candidates = artist
-    ? titleMatches.filter(record => normalizeLyricsLookup(record.artistName) === artist)
-    : titleMatches;
-
-  if (!candidates.length) candidates = titleMatches;
-
-  const artists = new Set(candidates.map(record => normalizeLyricsLookup(record.artistName)).filter(Boolean));
-  if (artists.size > 1) return null;
-
-  // A duração ajuda a escolher uma versão, mas não deve eliminar uma letra
-  // válida quando o arquivo tem alguns segundos de diferença.
-  if (Number.isFinite(duration)) {
-    const durationMatches = candidates.filter(record =>
-      Number.isFinite(Number(record.duration)) && Math.abs(Number(record.duration) - duration) <= 5
-    );
-    if (durationMatches.length) candidates = durationMatches;
-    else if (candidates.some(record => Number.isFinite(Number(record.duration)))) {
-      // sem versão parecida: aceita só até 10 s de diferença; mais que isso é outra
-      // versão (remix, estendida...) e a letra sairia de sincronia
-      const near = candidates.filter(record =>
-        Number.isFinite(Number(record.duration)) && Math.abs(Number(record.duration) - duration) <= 10
-      );
-      if (!near.length) return null;
-      candidates = near;
-    }
-  }
-  if (!duration && candidates.length > 1) {
-    const albums = new Set(candidates.map(record => normalizeLyricsLookup(record.albumName)).filter(Boolean));
-    if (albums.size > 1) return null;
-  }
   const album = normalizeLyricsLookup(song && song.album);
+  const titleMatches = records.filter(record => titleVariants.includes(
+    normalizeLyricsLookup(record.trackName || record.name)
+  ));
+  if (!titleMatches.length) return null;
+  const candidates = titleMatches.filter(record => record.syncedLyrics || record.plainLyrics);
   candidates.sort((a, b) => {
+    const score = record => {
+      const recordTitle = normalizeLyricsLookup(record.trackName || record.name);
+      const recordArtist = normalizeLyricsLookup(record.artistName);
+      const recordAlbum = normalizeLyricsLookup(record.albumName);
+      let value = recordTitle === titleVariants[0] ? 6 : 3;
+      if (artist && recordArtist === artist) value += 6;
+      if (album && recordAlbum === album) value += 3;
+      if (record.syncedLyrics) value += 2;
+      if (Number.isFinite(duration) && Number.isFinite(Number(record.duration))) {
+        const delta = Math.abs(Number(record.duration) - duration);
+        if (delta <= 5) value += 5;
+        else if (delta <= 10) value += 2;
+        else value -= Math.min(5, delta / 30);
+      }
+      return value;
+    };
+    const scoreDelta = score(b) - score(a);
+    if (scoreDelta) return scoreDelta;
     if (album) {
       const albumA = Number(normalizeLyricsLookup(a.albumName) === album);
       const albumB = Number(normalizeLyricsLookup(b.albumName) === album);
       if (albumA !== albumB) return albumB - albumA;
     }
-    const sync = Number(!!b.syncedLyrics) - Number(!!a.syncedLyrics);
-    if (sync) return sync;
     if (Number.isFinite(duration)) return Math.abs(Number(a.duration) - duration) - Math.abs(Number(b.duration) - duration);
     return 0;
   });
-  return candidates.find(record => record.syncedLyrics || record.plainLyrics) || null;
+  return candidates[0] || null;
 }
 
 async function fetchLyricsRecord(song) {
   const title = lyricsLookupTitle(song);
   if (!title) return null;
-  const params = new URLSearchParams({ track_name: title });
   const artist = lyricsLookupArtist(song);
+  const search = async params => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+    let response;
+    try {
+      response = await fetch(LRCLIB_SEARCH_URL + "?" + params.toString(), {
+        method: "GET",
+        headers: { "Lrclib-Client": LRCLIB_CLIENT },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (response.status === 429) {
+      const error = new Error("rate-limited");
+      const retryHeader = response.headers.get("Retry-After");
+      const retrySeconds = Number(retryHeader);
+      const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
+      error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
+        ? retrySeconds
+        : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 60);
+      error.retryReason = "rate";
+      throw error;
+    }
+    if (response.status === 503) {
+      const error = new Error("service-busy");
+      const retryHeader = response.headers.get("Retry-After");
+      const retrySeconds = Number(retryHeader);
+      const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
+      error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
+        ? retrySeconds
+        : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 5);
+      error.retryReason = "busy";
+      throw error;
+    }
+    if (!response.ok) throw new Error("lyrics-service-" + response.status);
+    return response.json();
+  };
+  const params = new URLSearchParams({ track_name: title });
   if (artist) params.set("artist_name", song.artist);
   if (song.album) params.set("album_name", song.album);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9000);
-  let response;
-  try {
-    response = await fetch(LRCLIB_SEARCH_URL + "?" + params.toString(), {
-      method: "GET",
-      headers: { "Lrclib-Client": LRCLIB_CLIENT },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
-  if (response.status === 429) {
-    const error = new Error("rate-limited");
-    const retryHeader = response.headers.get("Retry-After");
-    const retrySeconds = Number(retryHeader);
-    const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
-    error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
-      ? retrySeconds
-      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 60);
-    error.retryReason = "rate";
-    throw error;
-  }
-  if (response.status === 503) {
-    const error = new Error("service-busy");
-    const retryHeader = response.headers.get("Retry-After");
-    const retrySeconds = Number(retryHeader);
-    const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
-    error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
-      ? retrySeconds
-      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 5);
-    error.retryReason = "busy";
-    throw error;
-  }
-  if (!response.ok) throw new Error("lyrics-service-" + response.status);
-  const records = await response.json();
   const duration = await readLocalTrackDuration(song);
-  return chooseLyricsRecord(song, records, duration);
+  let records = await search(params);
+  let selected = chooseLyricsRecord(song, records, duration);
+  // Metadados incompletos ou divergentes do MediaStore não devem esconder
+  // uma letra que existe. Tenta novamente sem artista/álbum restritivos.
+  if (!selected && (artist || song.album)) {
+    const fallback = new URLSearchParams({ track_name: title });
+    records = await search(fallback);
+    selected = chooseLyricsRecord(song, records, duration);
+  }
+  return selected;
 }
 
 function updateLyricsLookupView(song) {
@@ -700,6 +710,280 @@ async function readMediaAudioFile(item, volumeName) {
   return file;
 }
 
+
+// O carregamento direto usa um File vazio para manter a biblioteca instantânea.
+// Ao abrir as letras, lemos o áudio somente então para recuperar letras
+// incorporadas que antes eram encontradas pelo jsmediatags na importação.
+const embeddedLyricsInFlight = new Map();
+async function loadEmbeddedLyrics(song) {
+  if (!song || song.lyrics || !song.sourceUri || !MN || typeof window.jsmediatags === "undefined") return false;
+  if (embeddedLyricsInFlight.has(song.id)) return embeddedLyricsInFlight.get(song.id);
+  const task = (async () => {
+    lyricsLookupStatus.set(song.id, "reading-local");
+    updateLyricsLookupView(song);
+    try {
+      const file = await readMediaAudioFile({
+        uri: song.sourceUri,
+        name: song.file && song.file.name || song.name || "audio",
+        mimeType: song.file && song.file.type || "application/octet-stream"
+      }, "");
+      return await new Promise(resolve => {
+        window.jsmediatags.read(file, {
+          onSuccess: async result => {
+            const embedded = lyricsFromTag(result && result.tags && result.tags.lyrics);
+            if (!embedded || !songs.includes(song)) {
+              resolve(false);
+              return;
+            }
+            song.lyrics = embedded;
+            song.lyricsSource = "embedded";
+            song.lyricsSourceId = null;
+            song.lyricsSearchAt = 0;
+            song.lyricsRetryAt = 0;
+            song.lyricsRetryReason = "";
+            await dbPut(toRecord(song));
+            lyricsLookupStatus.set(song.id, "found");
+            refreshAll();
+            updateLyricsLookupView(song);
+            resolve(true);
+          },
+          onError: () => resolve(false)
+        });
+      });
+    } catch (error) {
+      logErr("lyrics:embedded-media", error);
+      return false;
+    } finally {
+      if (!song.lyrics) {
+        lyricsLookupStatus.delete(song.id);
+        updateLyricsLookupView(song);
+      }
+    }
+  })();
+  embeddedLyricsInFlight.set(song.id, task);
+  task.finally(() => embeddedLyricsInFlight.delete(song.id));
+  return task;
+}
+
+function requestLyrics(song, force = false) {
+  return loadEmbeddedLyrics(song).then(found => found || requestOnlineLyrics(song, force));
+}
+
+async function loadMediaStoreCover(song) {
+  if (!song || song.coverBlob || !song.artworkUri || !MN || typeof MN.readMediaAudioArtwork !== "function") return false;
+  try {
+    const result = await MN.readMediaAudioArtwork({ uri: song.artworkUri });
+    const base64 = String(result && result.base64 || "");
+    if (!base64) return false;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: result.mimeType || "image/jpeg" });
+    if (!blob.type.startsWith("image/")) return false;
+    song.coverBlob = blob;
+    if (song.cover) URL.revokeObjectURL(song.cover);
+    song.cover = URL.createObjectURL(blob);
+    await dbPut(toRecord(song));
+    refreshAll();
+    if (song.id === currentId) updateFullPlayer();
+    return true;
+  } catch (e) {
+    logErr("media-audio:artwork", e);
+    return false;
+  }
+}
+
+function directMediaAudioSong(item, volumeName, canonical) {
+  const name = String(item && item.name || "áudio");
+  const baseName = name.replace(/\.[^/.]+$/, "").trim() || "Música";
+  const title = String(item && item.title || baseName).trim() || baseName;
+  const artist = String(item && item.artist || "Arquivo local").trim() || "Arquivo local";
+  const sourceUri = String(item && item.uri || "");
+  if (!sourceUri.startsWith("content://")) throw new Error("URI MediaStore inválido");
+  const file = new File([], name, {
+    type: item.mimeType || "application/octet-stream",
+    lastModified: Math.max(0, Number(item.lastModified) || 0)
+  });
+  try { Object.defineProperty(file, "sourceDocumentId", { value: canonical }); } catch (_) {}
+  try { Object.defineProperty(file, "sourcePath", { value: [item.relativePath || "", name].filter(Boolean).join("/") }); } catch (_) {}
+  return {
+    id: "android-" + canonical,
+    name: title,
+    artist,
+    album: String(item && item.album || ""),
+    genre: String(item && item.genre || ""),
+    sourceKey: canonical,
+    sourceUri,
+    artworkUri: String(item && item.artworkUri || ""),
+    duration: mediaStoreDurationSeconds(item && item.duration),
+    favorite: false,
+    file,
+    url: URL.createObjectURL(file),
+    coverBlob: null,
+    cover: null,
+    playCount: 0,
+    lastPlayed: 0,
+    lyrics: "",
+    lyricsSource: "",
+    lyricsSourceId: null,
+    lyricsSearchAt: 0,
+    lyricsRetryAt: 0,
+    lyricsRetryReason: "",
+    seed: null
+  };
+}
+
+async function importMediaAudioFoldersDirect(folders, options = {}) {
+  const excluded = options.excludedFolders || getMediaAudioImportExclusions();
+  const active = (Array.isArray(folders) ? folders : []).filter(folder => !mediaAudioFolderIsExcluded(folder, excluded));
+  const expected = active.reduce((sum, folder) => sum + (Number(folder.count) || 0), 0);
+  const existing = new Set();
+  songs.forEach(song => {
+    const key = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "");
+    if (key) existing.add(key);
+  });
+  let processed = 0;
+  let added = 0;
+  let failed = 0;
+  let sinceRefresh = 0;
+  let firstRendered = false;
+  for (const folder of active) {
+    let afterId = "";
+    let done = false;
+    while (!done) {
+      const page = await MN.listMediaAudioFiles({
+        volumeName: folder.volumeName,
+        relativePath: normalizeMediaAudioPath(folder.relativePath),
+        afterId,
+        limit: 50
+      });
+      const items = Array.isArray(page && page.items) ? page.items : [];
+      for (const item of items) {
+        try {
+          const itemFolder = { volumeName: folder.volumeName, relativePath: item.relativePath || folder.relativePath };
+          const canonical = mediaAudioCanonicalFileKey(folder.volumeName, item.relativePath || folder.relativePath, item.name);
+          if (!mediaAudioFolderIsExcluded(itemFolder, excluded) && canonical && !existing.has(canonical)) {
+            const song = directMediaAudioSong(item, folder.volumeName, canonical);
+            songs.push(song);
+            existing.add(canonical);
+            const stored = await dbPut(toRecord(song));
+            if (!stored) throw new Error("não foi possível salvar a música");
+            added++;
+            if (!firstRendered) {
+              refreshAll();
+              firstRendered = true;
+              sinceRefresh = 0;
+            }
+            if (!song.coverBlob && settings.autoCovers) fetchOnlineCover(song);
+            if (settings.autoLyrics) requestOnlineLyrics(song);
+          }
+        } catch (e) {
+          failed++;
+          logErr("media-audio:direct-import", e);
+        }
+        processed++;
+        sinceRefresh++;
+        if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
+        if (sinceRefresh >= 8) {
+          refreshAll();
+          sinceRefresh = 0;
+        }
+      }
+      const next = String(page && page.nextAfterId || "");
+      done = !!(page && page.done) || !items.length || !next || next === afterId;
+      afterId = next;
+    }
+  }
+  refreshAll();
+  return { processed, expected, added, failed, direct: true };
+}
+
+
+async function importMediaAudioLibraryDirect(options = {}) {
+  const excluded = options.excludedFolders || getMediaAudioImportExclusions();
+  const existing = new Set();
+  songs.forEach(song => {
+    const key = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "");
+    if (key) existing.add(key);
+  });
+  let volumeName = "";
+  let afterId = "";
+  let processed = 0;
+  let added = 0;
+  let failed = 0;
+  let sinceRefresh = 0;
+  let firstRendered = false;
+  let done = false;
+  while (!done) {
+    const page = await MN.listMediaAudioLibrary({ volumeName, afterId, limit: 50 });
+    const items = Array.isArray(page && page.items) ? page.items : [];
+    for (const item of items) {
+      try {
+        const canonical = mediaAudioCanonicalFileKey(page.volumeName, item.relativePath || "", item.name);
+        const excludedItem = mediaAudioFolderIsExcluded({ volumeName: page.volumeName, relativePath: item.relativePath || "" }, excluded);
+        if (!excludedItem && canonical) {
+          const existingSong = songs.find(song =>
+            mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "") === canonical
+          );
+          if (existingSong) {
+            let metadataChanged = false;
+            if (!existingSong.sourceUri && item.uri) {
+              existingSong.sourceUri = String(item.uri);
+              metadataChanged = true;
+            }
+            if (!existingSong.artworkUri && item.artworkUri) {
+              existingSong.artworkUri = String(item.artworkUri);
+              metadataChanged = true;
+            }
+            if (!existingSong.duration && mediaStoreDurationSeconds(item.duration) > 0) {
+              existingSong.duration = mediaStoreDurationSeconds(item.duration);
+              metadataChanged = true;
+            }
+            if (metadataChanged) await dbPut(toRecord(existingSong));
+            if (!existingSong.coverBlob) {
+              loadMediaStoreCover(existingSong).then(found => {
+                if (!found && settings.autoCovers) fetchOnlineCover(existingSong);
+              });
+            }
+          } else if (!existing.has(canonical)) {
+            const song = directMediaAudioSong(item, page.volumeName, canonical);
+            songs.push(song);
+            existing.add(canonical);
+            if (!await dbPut(toRecord(song))) throw new Error("não foi possível salvar a música");
+            added++;
+            if (!firstRendered) {
+              refreshAll();
+              firstRendered = true;
+              sinceRefresh = 0;
+            }
+            loadMediaStoreCover(song).then(found => {
+              if (!found && settings.autoCovers) fetchOnlineCover(song);
+            });
+            if (settings.autoLyrics) requestOnlineLyrics(song);
+          }
+        }
+      } catch (e) {
+        failed++;
+        logErr("media-audio:global-import", e);
+      }
+      processed++;
+      sinceRefresh++;
+      if (typeof options.onProgress === "function") options.onProgress({ processed, added, failed, item });
+      if (sinceRefresh >= 8) {
+        refreshAll();
+        sinceRefresh = 0;
+      }
+    }
+    done = !!(page && page.done);
+    volumeName = String(page && page.nextVolume || page && page.volumeName || "");
+    afterId = String(page && page.nextAfterId || "0");
+    if (!items.length && !done && volumeName === String(page && page.volumeName || "")) {
+      throw new Error("MediaStore não avançou a paginação global");
+    }
+  }
+  refreshAll();
+  return { processed, added, failed, direct: true };
+}
 async function importMediaAudioFolders(folders, options = {}) {
   if (!MN || typeof MN.listMediaAudioFiles !== "function") {
     throw new Error("A busca de áudios do aparelho não está disponível nesta versão do Nyx.");
@@ -796,10 +1080,25 @@ async function runMediaAudioSync(manual) {
     if (manual) showToast("Permita o acesso aos áudios nas configurações do Android para atualizar a biblioteca.");
     return null;
   }
-  const result = await MN.listMediaAudioFolders();
-  const folders = Array.isArray(result && result.folders) ? result.folders : [];
-  setMediaAudioFoldersCache(folders);
-  const imported = await importMediaAudioFolders(folders);
+  let imported;
+  try {
+    if (typeof MN.listMediaAudioLibrary === "function") {
+      imported = await importMediaAudioLibraryDirect();
+    } else {
+      const result = await MN.listMediaAudioFolders();
+      const folders = Array.isArray(result && result.folders) ? result.folders : [];
+      setMediaAudioFoldersCache(folders);
+      imported = typeof MN.listMediaAudioFiles === "function"
+        ? await importMediaAudioFoldersDirect(folders)
+        : await importMediaAudioFolders(folders);
+    }
+  } catch (directError) {
+    logErr("media-audio:direct-fallback", directError);
+    const result = await MN.listMediaAudioFolders();
+    const folders = Array.isArray(result && result.folders) ? result.folders : [];
+    setMediaAudioFoldersCache(folders);
+    imported = await importMediaAudioFolders(folders);
+  }
   if (manual) {
     if (imported.failed) showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
     else if (imported.added) showToast(imported.added + (imported.added === 1 ? " áudio novo importado" : " áudios novos importados"));

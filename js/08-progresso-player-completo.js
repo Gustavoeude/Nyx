@@ -290,7 +290,7 @@ $("fpLyricsBtn").onclick = () => {
   updateFullPlayer();
   if (lyricsView) {
     const song = current();
-    if (song && !song.lyrics) requestOnlineLyrics(song, true);
+    if (song && !song.lyrics) requestLyrics(song, true);
     requestAnimationFrame(scrollLyricsToActive);
   }
 };
