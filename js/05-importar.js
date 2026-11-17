@@ -49,7 +49,15 @@ function lyricsLookupTitle(song) {
 
 function lyricsLookupArtist(song) {
   const artist = normalizeLyricsLookup(song && song.artist);
-  return !artist || ["arquivo local", "artista desconhecido", "unknown"].includes(artist) ? "" : artist;
+  return !artist || ["arquivo local", "artista desconhecido", "unknown", "unknown artist", "various artists", "n a", "na"].includes(artist) ? "" : artist;
+}
+function lyricsTitleVariants(value) {
+  const original = normalizeLyricsLookup(value);
+  if (!original) return [];
+  const withoutVersion = original
+    .replace(/\s*\b(remaster(?:ed)?|deluxe|explicit|clean|radio edit|album version|single version|live|acoustic|demo|instrumental)\b.*$/i, "")
+    .trim();
+  return [...new Set([original, withoutVersion].filter(Boolean))];
 }
 function mediaStoreDurationSeconds(value) {
   const n = Number(value);
@@ -86,106 +94,101 @@ function hasSyncedLyrics(song) {
 }
 
 function chooseLyricsRecord(song, records, duration) {
-  const title = normalizeLyricsLookup(lyricsLookupTitle(song));
-  if (!title || !Array.isArray(records)) return null;
+  const titleVariants = lyricsTitleVariants(lyricsLookupTitle(song));
+  if (!titleVariants.length || !Array.isArray(records)) return null;
   const artist = lyricsLookupArtist(song);
-  // Primeiro tenta título + artista exatos. Se o cadastro do artista variar,
-  // mantém os resultados do título e só aceita quando não houver ambiguidade.
-  const titleMatches = records.filter(record =>
-    normalizeLyricsLookup(record.trackName || record.name) === title
-  );
-  if (!titleMatches.length) return null;
-
-  let candidates = artist
-    ? titleMatches.filter(record => normalizeLyricsLookup(record.artistName) === artist)
-    : titleMatches;
-
-  if (!candidates.length) candidates = titleMatches;
-
-  const artists = new Set(candidates.map(record => normalizeLyricsLookup(record.artistName)).filter(Boolean));
-  if (artists.size > 1) return null;
-
-  // A duração ajuda a escolher uma versão, mas não deve eliminar uma letra
-  // válida quando o arquivo tem alguns segundos de diferença.
-  if (Number.isFinite(duration)) {
-    const durationMatches = candidates.filter(record =>
-      Number.isFinite(Number(record.duration)) && Math.abs(Number(record.duration) - duration) <= 5
-    );
-    if (durationMatches.length) candidates = durationMatches;
-    else if (candidates.some(record => Number.isFinite(Number(record.duration)))) {
-      // sem versão parecida: aceita só até 10 s de diferença; mais que isso é outra
-      // versão (remix, estendida...) e a letra sairia de sincronia
-      const near = candidates.filter(record =>
-        Number.isFinite(Number(record.duration)) && Math.abs(Number(record.duration) - duration) <= 10
-      );
-      if (!near.length) return null;
-      candidates = near;
-    }
-  }
-  if (!duration && candidates.length > 1) {
-    const albums = new Set(candidates.map(record => normalizeLyricsLookup(record.albumName)).filter(Boolean));
-    if (albums.size > 1) return null;
-  }
   const album = normalizeLyricsLookup(song && song.album);
+  const titleMatches = records.filter(record => titleVariants.includes(
+    normalizeLyricsLookup(record.trackName || record.name)
+  ));
+  if (!titleMatches.length) return null;
+  const candidates = titleMatches.filter(record => record.syncedLyrics || record.plainLyrics);
   candidates.sort((a, b) => {
+    const score = record => {
+      const recordTitle = normalizeLyricsLookup(record.trackName || record.name);
+      const recordArtist = normalizeLyricsLookup(record.artistName);
+      const recordAlbum = normalizeLyricsLookup(record.albumName);
+      let value = recordTitle === titleVariants[0] ? 6 : 3;
+      if (artist && recordArtist === artist) value += 6;
+      if (album && recordAlbum === album) value += 3;
+      if (record.syncedLyrics) value += 2;
+      if (Number.isFinite(duration) && Number.isFinite(Number(record.duration))) {
+        const delta = Math.abs(Number(record.duration) - duration);
+        if (delta <= 5) value += 5;
+        else if (delta <= 10) value += 2;
+        else value -= Math.min(5, delta / 30);
+      }
+      return value;
+    };
+    const scoreDelta = score(b) - score(a);
+    if (scoreDelta) return scoreDelta;
     if (album) {
       const albumA = Number(normalizeLyricsLookup(a.albumName) === album);
       const albumB = Number(normalizeLyricsLookup(b.albumName) === album);
       if (albumA !== albumB) return albumB - albumA;
     }
-    const sync = Number(!!b.syncedLyrics) - Number(!!a.syncedLyrics);
-    if (sync) return sync;
     if (Number.isFinite(duration)) return Math.abs(Number(a.duration) - duration) - Math.abs(Number(b.duration) - duration);
     return 0;
   });
-  return candidates.find(record => record.syncedLyrics || record.plainLyrics) || null;
+  return candidates[0] || null;
 }
 
 async function fetchLyricsRecord(song) {
   const title = lyricsLookupTitle(song);
   if (!title) return null;
-  const params = new URLSearchParams({ track_name: title });
   const artist = lyricsLookupArtist(song);
+  const search = async params => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+    let response;
+    try {
+      response = await fetch(LRCLIB_SEARCH_URL + "?" + params.toString(), {
+        method: "GET",
+        headers: { "Lrclib-Client": LRCLIB_CLIENT },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (response.status === 429) {
+      const error = new Error("rate-limited");
+      const retryHeader = response.headers.get("Retry-After");
+      const retrySeconds = Number(retryHeader);
+      const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
+      error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
+        ? retrySeconds
+        : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 60);
+      error.retryReason = "rate";
+      throw error;
+    }
+    if (response.status === 503) {
+      const error = new Error("service-busy");
+      const retryHeader = response.headers.get("Retry-After");
+      const retrySeconds = Number(retryHeader);
+      const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
+      error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
+        ? retrySeconds
+        : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 5);
+      error.retryReason = "busy";
+      throw error;
+    }
+    if (!response.ok) throw new Error("lyrics-service-" + response.status);
+    return response.json();
+  };
+  const params = new URLSearchParams({ track_name: title });
   if (artist) params.set("artist_name", song.artist);
   if (song.album) params.set("album_name", song.album);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9000);
-  let response;
-  try {
-    response = await fetch(LRCLIB_SEARCH_URL + "?" + params.toString(), {
-      method: "GET",
-      headers: { "Lrclib-Client": LRCLIB_CLIENT },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
-  if (response.status === 429) {
-    const error = new Error("rate-limited");
-    const retryHeader = response.headers.get("Retry-After");
-    const retrySeconds = Number(retryHeader);
-    const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
-    error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
-      ? retrySeconds
-      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 60);
-    error.retryReason = "rate";
-    throw error;
-  }
-  if (response.status === 503) {
-    const error = new Error("service-busy");
-    const retryHeader = response.headers.get("Retry-After");
-    const retrySeconds = Number(retryHeader);
-    const retryDate = retryHeader && Number.isNaN(retrySeconds) ? Date.parse(retryHeader) : NaN;
-    error.retryAfter = Math.max(1, Number.isFinite(retrySeconds) && retrySeconds > 0
-      ? retrySeconds
-      : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : 5);
-    error.retryReason = "busy";
-    throw error;
-  }
-  if (!response.ok) throw new Error("lyrics-service-" + response.status);
-  const records = await response.json();
   const duration = await readLocalTrackDuration(song);
-  return chooseLyricsRecord(song, records, duration);
+  let records = await search(params);
+  let selected = chooseLyricsRecord(song, records, duration);
+  // Metadados incompletos ou divergentes do MediaStore não devem esconder
+  // uma letra que existe. Tenta novamente sem artista/álbum restritivos.
+  if (!selected && (artist || song.album)) {
+    const fallback = new URLSearchParams({ track_name: title });
+    records = await search(fallback);
+    selected = chooseLyricsRecord(song, records, duration);
+  }
+  return selected;
 }
 
 function updateLyricsLookupView(song) {
