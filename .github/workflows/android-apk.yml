@@ -17,6 +17,7 @@ on:
       - "script.js"
       - "js/**"
       - "style.css"
+      - "m3e-biblioteca.css"
       - "jsmediatags.min.js"
       - "manifest.json"
       - "icon-*.png"
@@ -148,7 +149,7 @@ jobs:
           packages: platform-tools
 
       - name: Instalar Android Build Tools
-        run: sdkmanager "build-tools;35.0.0"
+        run: sdkmanager "build-tools;36.0.0"
 
       - name: Assinar e verificar APK
         env:
@@ -161,7 +162,7 @@ jobs:
             exit 1
           fi
           printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/nyx.jks"
-          BT="$ANDROID_HOME/build-tools/35.0.0"
+          BT="$ANDROID_HOME/build-tools/36.0.0"
           "$BT/zipalign" -p -f 4 out/Musica-unsigned.apk "$RUNNER_TEMP/aligned.apk"
           "$BT/apksigner" sign --ks "$RUNNER_TEMP/nyx.jks" --ks-key-alias musica \
             --ks-pass env:KS_PASS --key-pass env:KS_PASS --out out/Nyx.apk "$RUNNER_TEMP/aligned.apk"
