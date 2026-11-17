@@ -244,7 +244,7 @@ $("fpShuffle").onclick = () => {
 // Botão de aleatório da barra de navegação: liga/desliga e, sem nada tocando, começa uma música ao acaso
 $("navShuffle").onclick = () => {
   if (!songs.length) {
-    showToast("A biblioteca está vazia. Permita o acesso aos áudios do aparelho.");
+    openFilePicker();
     return;
   }
   if (!current()) {

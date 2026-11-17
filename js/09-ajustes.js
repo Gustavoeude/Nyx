@@ -441,18 +441,14 @@ function directorySettingsGroup(title, description, folders, kind, options = {})
   const head = el("div", "directory-group-head");
   const heading = el("div", "set-row-text");
   heading.append(el("strong", "", title), el("span", "", description));
-  if (kind === "ignored") {
-    const addLabel = "Adicionar";
-    const add = el("button", "perm-btn directory-add-btn", addLabel);
-    add.type = "button";
-    add.setAttribute("aria-label", addLabel);
-    add.onclick = async () => {
-      if (await addDirectory(kind)) refreshSettingsPage();
-    };
-    head.append(heading, add);
-  } else {
-    head.appendChild(heading);
-  }
+  const addLabel = kind === "watched" ? "Adicionar manualmente" : "Adicionar";
+  const add = el("button", "perm-btn directory-add-btn", addLabel);
+  add.type = "button";
+  add.setAttribute("aria-label", addLabel);
+  add.onclick = async () => {
+    if (await addDirectory(kind)) refreshSettingsPage();
+  };
+  head.append(heading, add);
   sec.appendChild(head);
 
   if (options.loading) {
@@ -506,7 +502,7 @@ function pageBiblioteca() {
         ? "Nenhuma pasta com áudio foi encontrada."
         : "Abra Pastas de áudio do aparelho para carregar a lista.";
     out.push(directorySettingsGroup(
-      "Pastas de áudio",
+      "Pastas monitoradas",
       "As pastas não ignoradas entram automaticamente.",
       automaticFolders.concat(manualFolders),
       "watched",
@@ -534,6 +530,18 @@ function pageBiblioteca() {
       out.push(syncSec);
     }
   }
+  const sec = el("div", "set-sec");
+  const permRow = el("button", "set-row");
+  const permText = el("div", "set-row-text");
+  permText.append(
+    el("strong", "", "Importação manual e controles"),
+    el("span", "", "Importe arquivos ou uma pasta sem ativar o monitoramento automático.")
+  );
+  permRow.append(permText, el("span", "material-symbols-rounded", "folder"));
+  permRow.onclick = () => openPermissions(false);
+  sec.appendChild(permRow);
+  out.push(sec);
+
   const genreSec = el("details", "set-sec set-disclosure");
   const summary = el("summary", "set-row set-disclosure-summary");
   const summaryText = el("div", "set-row-text");
@@ -665,7 +673,7 @@ function renderSettingsPage(box, go) {
     const list = el("div", "cat-list");
     list.append(
       catRow("person", 215, "Perfil", settings.name ? settings.name : "Seu nome e saudação", editProfileName),
-      catRow("library_music", 205, "Biblioteca", "Músicas encontradas no aparelho", () => go("biblioteca")),
+      catRow("library_music", 205, "Biblioteca", "Importar músicas e pastas", () => go("biblioteca")),
       catRow("light_mode", 335, "Aparência", "Cor do app, fonte, preto total, capa em disco", () => go("aparencia"))
     );
     list.appendChild(catRow("translate", 265, "Idioma", languageSummary(), () => go("idioma")));
@@ -906,24 +914,51 @@ function openShapePicker(id, backToSettings) {
    Importação e suporte do navegador
    ========================================================== */
 async function openPermissions(firstRun) {
+  const returnFocus = firstRun
+    ? $("homeSettings")
+    : activeSheet ? activeSheet.returnFocus : document.activeElement;
+  closeSheet();
   if (firstRun) lsSet("permsAsked", true);
-  if (!MN || typeof MN.requestAudioLibraryAccess !== "function") {
-    showToast("A busca automática da biblioteca está disponível no aplicativo Android.");
-    return;
-  }
-  try {
-    const result = await MN.requestAudioLibraryAccess();
-    if (!result || !result.granted) {
-      showToast("Permita o acesso aos áudios nas configurações do Android para atualizar a biblioteca.");
-      return;
-    }
-    lsSet("mediaAudioEnabled", true);
-    if (typeof syncMediaAudioLibrary === "function") await syncMediaAudioLibrary(true);
-  } catch (e) {
-    logErr("ajustes:permissao-audio", e);
-    showToast("Não foi possível acessar os áudios do aparelho.");
-  }
+
+  const scrim = el("div", "scrim");
+  const sheet = el("div", "sheet");
+  sheet.appendChild(el("div", "sheet-handle"));
+  sheet.appendChild(el("h3", "", firstRun ? "Bem-vindo à Música!" : "Importar músicas"));
+  sheet.appendChild(
+    el("div", "set-hint perm-intro", "Escolha arquivos ou uma pasta para adicionar músicas. O app só recebe os itens que você selecionar.")
+  );
+
+  const sec = el("div", "set-sec");
+  const addOption = (icon, title, desc, label, action) => {
+    const row = el("div", "set-row perm-row");
+    row.appendChild(el("span", "material-symbols-rounded perm-ico", icon));
+    const text = el("div", "set-row-text");
+    text.append(el("strong", "", title), el("span", "", desc));
+    const btn = el("button", "perm-btn", label);
+    btn.onclick = () => {
+      closeSheet();
+      action();
+    };
+    row.append(text, btn);
+    sec.appendChild(row);
+  };
+
+  addOption("folder", "Pasta de músicas", "Importa arquivos de áudio encontrados na pasta escolhida.", "Escolher", importFolder);
+  addOption("upload_file", "Arquivos de áudio", "Selecione uma ou mais músicas individualmente.", "Escolher", openFilePicker);
+
+  const note = el(
+    "div",
+    "set-hint",
+    "Os controles na tela bloqueada dependem do suporte do navegador. Eles não precisam da permissão de notificações."
+  );
+  const done = el("button", "perm-done", firstRun ? "Continuar" : "Fechar");
+  done.onclick = closeSheet;
+
+  sheet.append(sec, note, done);
+  scrim.onclick = closeSheet;
+  presentSheet(scrim, sheet, returnFocus);
 }
+
 // Primeira abertura: mostra opções de importação uma vez.
 async function maybeAskPermissionsFirstRun() {
   if (lsGet("permsAsked", false)) return;
