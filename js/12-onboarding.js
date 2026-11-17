@@ -285,13 +285,9 @@ function obCommit() {
 function obUpdateStatus() {
   const box = obRoot && obRoot.querySelector(".ob-status");
   if (!box) { if (!obRoot && obStatus && obStatus.timer && obStatus.done) clearInterval(obStatus.timer); return; }
-  if (!obStatus) { box.classList.remove("show"); return; }
-  const added = Math.max(0, songs.length - obStatus.baseline);
-  box.classList.add("show");
-  box.classList.toggle("done", obStatus.done);
-  box.querySelector("span").textContent = obStatus.done
-    ? obPlural(added, "música na biblioteca", "músicas na biblioteca")
-    : "Importando músicas… " + added + (obStatus.expected ? " de " + obStatus.expected : "");
+  // A importação continua em segundo plano, mas o onboarding não exibe
+  // o aviso "Importando músicas…" depois que o usuário confirma as pastas.
+  box.classList.remove("show", "done");
 }
 
 // ---------- forma que se transforma entre os passos ----------
