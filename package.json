@@ -1,6 +1,6 @@
 {
   "name": "reprodutor-musical",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "private": true,
   "scripts": {
     "build:web": "node scripts/copy-web.js",
