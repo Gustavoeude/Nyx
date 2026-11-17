@@ -222,6 +222,7 @@ function renderLyrics(song) {
     empty.appendChild(el("span", "material-symbols-rounded", "lyrics"));
     const state = lyricsLookupStatus.get(song && song.id);
     const messages = {
+      "reading-local": "Lendo a letra incorporada no arquivo…",
       searching: "Buscando letras online…",
       "not-found": "Não encontramos uma letra correspondente.",
       error: "Não foi possível buscar agora. Verifique a conexão e tente novamente.",
@@ -232,13 +233,13 @@ function renderLyrics(song) {
     message.setAttribute("aria-live", "polite");
     empty.appendChild(message);
 
-    if (state !== "searching") {
+    if (state !== "searching" && state !== "reading-local") {
       const actions = el("div", "lyrics-actions");
       const searchBtn = el("button", "tonal-btn");
       searchBtn.appendChild(el("span", "material-symbols-rounded", "search"));
       searchBtn.appendChild(document.createTextNode("Buscar na internet"));
       searchBtn.onclick = () => {
-        if (song) requestOnlineLyrics(song, true);
+        if (song) requestLyrics(song, true);
       };
       actions.appendChild(searchBtn);
 

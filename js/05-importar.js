@@ -711,6 +711,64 @@ async function readMediaAudioFile(item, volumeName) {
 }
 
 
+// O carregamento direto usa um File vazio para manter a biblioteca instantânea.
+// Ao abrir as letras, lemos o áudio somente então para recuperar letras
+// incorporadas que antes eram encontradas pelo jsmediatags na importação.
+const embeddedLyricsInFlight = new Map();
+async function loadEmbeddedLyrics(song) {
+  if (!song || song.lyrics || !song.sourceUri || !MN || typeof window.jsmediatags === "undefined") return false;
+  if (embeddedLyricsInFlight.has(song.id)) return embeddedLyricsInFlight.get(song.id);
+  const task = (async () => {
+    lyricsLookupStatus.set(song.id, "reading-local");
+    updateLyricsLookupView(song);
+    try {
+      const file = await readMediaAudioFile({
+        uri: song.sourceUri,
+        name: song.file && song.file.name || song.name || "audio",
+        mimeType: song.file && song.file.type || "application/octet-stream"
+      }, "");
+      return await new Promise(resolve => {
+        window.jsmediatags.read(file, {
+          onSuccess: async result => {
+            const embedded = lyricsFromTag(result && result.tags && result.tags.lyrics);
+            if (!embedded || !songs.includes(song)) {
+              resolve(false);
+              return;
+            }
+            song.lyrics = embedded;
+            song.lyricsSource = "embedded";
+            song.lyricsSourceId = null;
+            song.lyricsSearchAt = 0;
+            song.lyricsRetryAt = 0;
+            song.lyricsRetryReason = "";
+            await dbPut(toRecord(song));
+            lyricsLookupStatus.set(song.id, "found");
+            refreshAll();
+            updateLyricsLookupView(song);
+            resolve(true);
+          },
+          onError: () => resolve(false)
+        });
+      });
+    } catch (error) {
+      logErr("lyrics:embedded-media", error);
+      return false;
+    } finally {
+      if (!song.lyrics) {
+        lyricsLookupStatus.delete(song.id);
+        updateLyricsLookupView(song);
+      }
+    }
+  })();
+  embeddedLyricsInFlight.set(song.id, task);
+  task.finally(() => embeddedLyricsInFlight.delete(song.id));
+  return task;
+}
+
+function requestLyrics(song, force = false) {
+  return loadEmbeddedLyrics(song).then(found => found || requestOnlineLyrics(song, force));
+}
+
 async function loadMediaStoreCover(song) {
   if (!song || song.coverBlob || !song.artworkUri || !MN || typeof MN.readMediaAudioArtwork !== "function") return false;
   try {

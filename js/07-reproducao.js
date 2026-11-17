@@ -71,7 +71,7 @@ $("nowLyrics").addEventListener("click", e => {
   renderLyrics(song);
   openFullPlayer();
   startLyricsSyncLoop();
-  if (!song.lyrics) requestOnlineLyrics(song, true);
+  if (!song.lyrics) requestLyrics(song, true);
 });
 
 $("nowPlay").addEventListener("click", e => {
