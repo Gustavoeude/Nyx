@@ -1,11 +1,12 @@
 // Service worker: mantém os arquivos do player disponíveis offline.
-const CACHE = "aplicativo-reprodutor-musica-v95";
+const CACHE = "aplicativo-reprodutor-musica-v101";
 const APP_CACHE_PREFIX = "aplicativo-reprodutor-musica-v";
 const LEGACY_CACHE_NAMES = new Set(["musica-v26"]);
 const CORE = [
   "./",
   "index.html",
   "style.css",
+  "m3e-biblioteca.css",
   "js/00-erros.js",
   "js/01-base.js",
   "js/02-player-nativo.js",

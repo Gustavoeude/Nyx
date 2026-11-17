@@ -310,6 +310,16 @@ function renderSearch() {
       s.name.toLowerCase().includes(query) ||
       s.artist.toLowerCase().includes(query)
   );
+  const searchBadge = $("searchBadge");
+  if (searchBadge) {
+    const num = searchBadge.firstElementChild;
+    if (num.textContent !== String(results.length)) {
+      num.textContent = results.length;
+      searchBadge.classList.remove("pop");
+      void searchBadge.offsetWidth;
+      searchBadge.classList.add("pop");
+    }
+  }
 
   if (results.length === 0) {
     $("searchStatus").textContent = query
@@ -465,19 +475,47 @@ function buildGroups(type) {
   return Array.from(map, ([key, list]) => ({ key, list })).sort((a, b) => a.key.localeCompare(b.key, "pt-BR"));
 }
 
+function placeLibTabInd(instant) {
+  const box = $("libTabs");
+  const ind = $("libTabInd");
+  const active = box && box.querySelector(".lib-tab.active");
+  if (!ind || !active || !active.offsetWidth) return;
+  if (instant) ind.style.transition = "none";
+  ind.style.width = (active.offsetWidth - 6) + "px";
+  ind.style.transform = "translateX(" + (active.offsetLeft + 3) + "px)";
+  if (instant) {
+    void ind.offsetWidth;
+    ind.style.transition = "";
+  }
+}
+
 function renderLibTabs() {
   document.querySelectorAll("#libTabs .lib-tab").forEach(b => {
     const on = b.dataset.tab === libraryTab;
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", String(on));
   });
+  placeLibTabInd(false);
 }
+
+if (window.ResizeObserver && $("libTabs")) {
+  new ResizeObserver(() => placeLibTabInd(true)).observe($("libTabs"));
+}
+const LIB_TAB_ORDER = ["songs", "albums", "artists", "genres"];
 
 document.querySelectorAll("#libTabs .lib-tab").forEach(b => {
   b.addEventListener("click", () => {
+    const dir = LIB_TAB_ORDER.indexOf(b.dataset.tab) >= LIB_TAB_ORDER.indexOf(libraryTab) ? 1 : -1;
     libraryTab = b.dataset.tab;
     libraryGroup = null;
     renderLibrary();
+    const list = $("songList");
+    if (list) {
+      list.style.setProperty("--tab-dir", dir);
+      list.classList.remove("tab-in");
+      void list.offsetWidth;
+      list.classList.add("tab-in");
+    }
   });
 });
 
@@ -514,6 +552,8 @@ function renderLibrary() {
 
   $("libraryCount").textContent =
     songs.length + (songs.length === 1 ? " música adicionada" : " músicas adicionadas");
+  const badge = $("libraryBadge");
+  if (badge) badge.firstElementChild.textContent = songs.length;
 
   const page = $("libraryPage");
   page.dataset.tab = libraryTab;

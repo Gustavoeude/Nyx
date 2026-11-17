@@ -128,6 +128,8 @@ $("seek").addEventListener("change", () => {
 /* ==========================================================
    Player completo
    ========================================================== */
+let fpLastSong = null;
+
 function updateFullPlayer() {
   const navSh = $("navShuffle");
   if (navSh) {
@@ -138,6 +140,17 @@ function updateFullPlayer() {
 
   const song = current();
   if (!song) return;
+  const fpKey = String(song.id);
+  if (fpKey !== fpLastSong) {
+    const firstSong = fpLastSong === null;
+    fpLastSong = fpKey;
+    if (!firstSong) {
+      const fpBox = $("fullPlayer");
+      fpBox.classList.remove("fp-swap");
+      void fpBox.offsetWidth;
+      fpBox.classList.add("fp-swap");
+    }
+  }
 
   $("fpTitle").textContent = song.name || "Sem título";
   $("fpArtist").textContent = song.artist || "Artista desconhecido";

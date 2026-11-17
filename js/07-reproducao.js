@@ -19,6 +19,8 @@ function attachRipple(node) {
   });
 }
 
+let miniLastSong = null;
+
 function updateMiniPlayer() {
   const box = $("nowPlaying");
 
@@ -35,6 +37,17 @@ function updateMiniPlayer() {
   $("nowArtist").textContent = song.artist;
   $("nowInfo").setAttribute("aria-label", "Abrir player completo: " + song.name);
   setCover($("nowCover"), song.cover);
+  const miniKey = String(song.id);
+  if (miniKey !== miniLastSong) {
+    const first = miniLastSong === null;
+    miniLastSong = miniKey;
+    if (!first) {
+      const mc = $("nowCover");
+      mc.classList.remove("swap-pop");
+      void mc.offsetWidth;
+      mc.classList.add("swap-pop");
+    }
+  }
   $("nowLyrics").classList.toggle("has-lyrics", !!song.lyrics);
   $("nowLyrics").setAttribute("aria-label", song.lyrics ? "Mostrar letra disponível" : "Abrir e buscar a letra");
 }

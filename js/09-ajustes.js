@@ -189,6 +189,7 @@ function pageAparencia(go) {
       const value = Number(slider.value);
       settings[key] = key === "wallpaperOpacity" ? value / 100 : value;
       valueLabel.textContent = format(value);
+      slider.style.setProperty("--p", ((value - min) / (max - min) * 100) + "%");
       applyWallpaper();
       if (persist) saveSettings();
     };

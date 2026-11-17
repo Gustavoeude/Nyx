@@ -14,6 +14,7 @@
   <!-- Fontes carregam em segundo plano: a página aparece na hora, mesmo com internet lenta -->
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="style.css?v=61">
+  <link rel="stylesheet" href="m3e-biblioteca.css?v=6">
   <script>
     /* Primeira instalação: esconde o app até o tutorial abrir (evita ver a tela inicial antes). */
     try {
@@ -125,6 +126,7 @@
         <p class="eyebrow">DESCUBRA SUAS MÚSICAS</p>
         <h1>Search<span class="accent">.</span></h1>
         <p>Pesquise na sua coleção.</p>
+        <div class="lib-badge search-badge" id="searchBadge" aria-hidden="true"><span>0</span></div>
       </div>
 
       <label class="search-box">
@@ -145,9 +147,11 @@
           <h1>Biblioteca</h1>
           <p id="libraryCount">0 músicas adicionadas</p>
         </div>
+        <div class="lib-badge" id="libraryBadge" aria-hidden="true"><span>0</span></div>
       </div>
 
       <div class="lib-tabs" id="libTabs" role="tablist">
+        <span class="lib-tab-ind" id="libTabInd" aria-hidden="true"></span>
         <button class="lib-tab active" data-tab="songs" role="tab">Músicas</button>
         <button class="lib-tab" data-tab="albums" role="tab">Álbuns</button>
         <button class="lib-tab" data-tab="artists" role="tab">Artistas</button>

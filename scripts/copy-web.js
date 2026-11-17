@@ -24,6 +24,7 @@ const files = [
   "js/16-widgets.js",
   "js/11-inicio-pwa.js",
   "style.css",
+  "m3e-biblioteca.css",
   "sw.js",
   "jsmediatags.min.js",
   "manifest.json",
