@@ -51,8 +51,15 @@ function lyricsLookupArtist(song) {
   const artist = normalizeLyricsLookup(song && song.artist);
   return !artist || ["arquivo local", "artista desconhecido", "unknown"].includes(artist) ? "" : artist;
 }
-
+function mediaStoreDurationSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // MediaStore.Audio.Media.DURATION é exposto em milissegundos.
+  return n > 1000 ? n / 1000 : n;
+}
 function readLocalTrackDuration(song) {
+  const known = Number(song && song.duration);
+  if (Number.isFinite(known) && known > 0) return Promise.resolve(known);
   if (!song || !song.url) return Promise.resolve(null);
   return new Promise(resolve => {
     const probe = document.createElement("audio");
@@ -747,7 +754,7 @@ function directMediaAudioSong(item, volumeName, canonical) {
     sourceKey: canonical,
     sourceUri,
     artworkUri: String(item && item.artworkUri || ""),
-    duration: Math.max(0, Number(item && item.duration) || 0),
+    duration: mediaStoreDurationSeconds(item && item.duration),
     favorite: false,
     file,
     url: URL.createObjectURL(file),
@@ -867,8 +874,8 @@ async function importMediaAudioLibraryDirect(options = {}) {
               existingSong.artworkUri = String(item.artworkUri);
               metadataChanged = true;
             }
-            if (!existingSong.duration && Number(item.duration) > 0) {
-              existingSong.duration = Number(item.duration);
+            if (!existingSong.duration && mediaStoreDurationSeconds(item.duration) > 0) {
+              existingSong.duration = mediaStoreDurationSeconds(item.duration);
               metadataChanged = true;
             }
             if (metadataChanged) await dbPut(toRecord(existingSong));

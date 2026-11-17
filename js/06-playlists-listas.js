@@ -160,6 +160,12 @@ function openSongMenu(song, opts = {}) {
       label: "Remover letra",
       run: () => {
         song.lyrics = "";
+        song.lyricsSource = "";
+        song.lyricsSourceId = null;
+        song.lyricsSearchAt = 0;
+        song.lyricsRetryAt = 0;
+        song.lyricsRetryReason = "";
+        lyricsLookupStatus.delete(song.id);
         dbPut(toRecord(song));
         if (song.id === currentId) renderLyrics(song);
         showToast("Letra removida");
