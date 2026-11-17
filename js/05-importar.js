@@ -700,6 +700,31 @@ async function readMediaAudioFile(item, volumeName) {
   return file;
 }
 
+
+async function loadMediaStoreCover(song) {
+  if (!song || song.coverBlob || !song.artworkUri || !MN || typeof MN.readMediaAudioArtwork !== "function") return false;
+  try {
+    const result = await MN.readMediaAudioArtwork({ uri: song.artworkUri });
+    const base64 = String(result && result.base64 || "");
+    if (!base64) return false;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: result.mimeType || "image/jpeg" });
+    if (!blob.type.startsWith("image/")) return false;
+    song.coverBlob = blob;
+    if (song.cover) URL.revokeObjectURL(song.cover);
+    song.cover = URL.createObjectURL(blob);
+    await dbPut(toRecord(song));
+    refreshAll();
+    if (song.id === currentId) updateFullPlayer();
+    return true;
+  } catch (e) {
+    logErr("media-audio:artwork", e);
+    return false;
+  }
+}
+
 function directMediaAudioSong(item, volumeName, canonical) {
   const name = String(item && item.name || "áudio");
   const baseName = name.replace(/\.[^/.]+$/, "").trim() || "Música";
@@ -721,6 +746,7 @@ function directMediaAudioSong(item, volumeName, canonical) {
     genre: String(item && item.genre || ""),
     sourceKey: canonical,
     sourceUri,
+    artworkUri: String(item && item.artworkUri || ""),
     duration: Math.max(0, Number(item && item.duration) || 0),
     favorite: false,
     file,
@@ -838,7 +864,9 @@ async function importMediaAudioLibraryDirect(options = {}) {
             firstRendered = true;
             sinceRefresh = 0;
           }
-          if (settings.autoCovers) fetchOnlineCover(song);
+          loadMediaStoreCover(song).then(found => {
+            if (!found && settings.autoCovers) fetchOnlineCover(song);
+          });
           if (settings.autoLyrics) requestOnlineLyrics(song);
         }
       } catch (e) {

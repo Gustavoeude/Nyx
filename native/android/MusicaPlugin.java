@@ -651,6 +651,7 @@ public class MusicaPlugin extends Plugin {
                         MediaStore.Audio.Media.TITLE,
                         MediaStore.Audio.Media.ARTIST,
                         MediaStore.Audio.Media.ALBUM,
+                        MediaStore.Audio.Media.ALBUM_ID,
                         MediaStore.Audio.Media.DURATION
                 };
                 if (relativePath.isEmpty()) {
@@ -681,6 +682,7 @@ public class MusicaPlugin extends Plugin {
                         MediaStore.Audio.Media.TITLE,
                         MediaStore.Audio.Media.ARTIST,
                         MediaStore.Audio.Media.ALBUM,
+                        MediaStore.Audio.Media.ALBUM_ID,
                         MediaStore.Audio.Media.DURATION
                 };
                 String parentExpr = "CASE WHEN length(" + MediaStore.Audio.Media.DATA + ") = length("
@@ -715,6 +717,7 @@ public class MusicaPlugin extends Plugin {
                 int titleColumn = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE);
                 int artistColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST);
                 int albumColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+                int albumIdColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID);
                 int durationColumn = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION);
                 int returned = 0;
                 while (cursor.moveToNext()) {
@@ -747,6 +750,10 @@ public class MusicaPlugin extends Plugin {
                     item.put("title", titleColumn >= 0 && !cursor.isNull(titleColumn) ? cursor.getString(titleColumn) : name.replaceFirst("\\.[^.]+$", ""));
                     item.put("artist", artistColumn >= 0 && !cursor.isNull(artistColumn) ? cursor.getString(artistColumn) : "Arquivo local");
                     item.put("album", albumColumn >= 0 && !cursor.isNull(albumColumn) ? cursor.getString(albumColumn) : "");
+                    long albumId = albumIdColumn >= 0 && !cursor.isNull(albumIdColumn) ? cursor.getLong(albumIdColumn) : 0L;
+                    item.put("albumId", albumId);
+                    item.put("artworkUri", albumId > 0 ? Uri.parse("content://media/"
+                            + (modern ? volume : "external") + "/audio/albumart/" + albumId).toString() : "");
                     item.put("genre", "");
                     item.put("duration", durationColumn >= 0 && !cursor.isNull(durationColumn) ? cursor.getLong(durationColumn) : 0L);
                     item.put("sourceKey", "android-mediastore::" + volumeName + "::" + id + "::" + size + "::" + modifiedSeconds);
@@ -803,6 +810,7 @@ public class MusicaPlugin extends Plugin {
                     MediaStore.Audio.Media.TITLE,
                     MediaStore.Audio.Media.ARTIST,
                     MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.DURATION
             };
             String selection = modern
@@ -826,6 +834,7 @@ public class MusicaPlugin extends Plugin {
                 int titleCol = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE);
                 int artistCol = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST);
                 int albumCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+                int albumIdCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID);
                 int durationCol = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION);
                 int returned = 0;
                 while (cursor.moveToNext()) {
@@ -848,6 +857,10 @@ public class MusicaPlugin extends Plugin {
                     item.put("title", titleCol >= 0 && !cursor.isNull(titleCol) ? cursor.getString(titleCol) : name.replaceFirst("\\.[^.]+$", ""));
                     item.put("artist", artistCol >= 0 && !cursor.isNull(artistCol) ? cursor.getString(artistCol) : "Arquivo local");
                     item.put("album", albumCol >= 0 && !cursor.isNull(albumCol) ? cursor.getString(albumCol) : "");
+                    long albumId = albumIdCol >= 0 && !cursor.isNull(albumIdCol) ? cursor.getLong(albumIdCol) : 0L;
+                    item.put("albumId", albumId);
+                    item.put("artworkUri", albumId > 0 ? Uri.parse("content://media/"
+                            + (modern ? volume : "external") + "/audio/albumart/" + albumId).toString() : "");
                     item.put("genre", "");
                     item.put("duration", durationCol >= 0 && !cursor.isNull(durationCol) ? cursor.getLong(durationCol) : 0L);
                     item.put("sourceKey", "android-mediastore::" + volume + "::" + id + "::" + size + "::" + modified);
@@ -907,6 +920,38 @@ public class MusicaPlugin extends Plugin {
             result.put("granted", false);
         }
         call.resolve(result);
+    }
+
+
+    /** Lê somente a imagem do álbum pelo ContentResolver; nunca copia o arquivo de áudio. */
+    @PluginMethod
+    public void readMediaAudioArtwork(PluginCall call) {
+        try {
+            requireAudioLibraryPermission();
+            String rawUri = call.getString("uri", "");
+            if (rawUri == null || !rawUri.startsWith("content://")) throw new IllegalArgumentException("Invalid artwork URI");
+            Uri uri = Uri.parse(rawUri);
+            String mime = getContext().getContentResolver().getType(uri);
+            if (mime == null || !mime.startsWith("image/")) mime = "image/jpeg";
+            byte[] bytes;
+            try (java.io.InputStream in = getContext().getContentResolver().openInputStream(uri);
+                 java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                if (in == null) throw new java.io.IOException("Artwork stream unavailable");
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                bytes = out.toByteArray();
+            }
+            if (bytes.length == 0 || bytes.length > 8 * 1024 * 1024) throw new java.io.IOException("Artwork is empty or too large");
+            JSObject result = new JSObject();
+            result.put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            result.put("mimeType", mime);
+            call.resolve(result);
+        } catch (SecurityException e) {
+            call.reject("Audio artwork access denied: " + e.getMessage());
+        } catch (Exception e) {
+            call.reject("Could not read MediaStore artwork: " + e.getMessage());
+        }
     }
 
     // ================= player nativo (Media3) =================
