@@ -290,12 +290,6 @@ function showEmpty(container, title, message, showButton) {
   empty.appendChild(el("h3", "", title));
   empty.appendChild(el("p", "", message));
 
-  if (showButton) {
-    const button = el("button", "", "Adicionar músicas");
-    button.onclick = openFilePicker;
-    empty.appendChild(button);
-  }
-
   container.appendChild(empty);
 }
 
@@ -329,7 +323,7 @@ function renderSearch() {
       container,
       songs.length === 0 ? "Nenhuma música adicionada" : "Nenhum resultado encontrado",
       songs.length === 0
-        ? "Adicione músicas para pesquisar sua coleção."
+        ? "Permita o acesso aos áudios do aparelho para atualizar sua coleção."
         : "Experimente pesquisar por outro nome.",
       songs.length === 0
     );
@@ -769,13 +763,13 @@ function updateHome() {
   homeMain = main;
   homeTargets.artMain = main ? main.id : null;
   setCover($("artMain"), main ? main.cover : null);
-  $("artMain").setAttribute("aria-label", main ? "Tocar " + main.name + " — " + main.artist : "Adicionar músicas");
+  $("artMain").setAttribute("aria-label", main ? "Tocar " + main.name + " — " + main.artist : "Nenhuma música disponível");
 
   FAV_IDS.forEach((id, i) => {
     const song = picks[i];
     homeTargets[id] = song ? song.id : null;
     setCover($(id), song ? song.cover : null);
-    $(id).setAttribute("aria-label", song ? "Tocar " + song.name + " — " + song.artist : "Adicionar músicas");
+    $(id).setAttribute("aria-label", song ? "Tocar " + song.name + " — " + song.artist : "Nenhuma música disponível");
   });
 
   $("contTitle").textContent = main ? main.name : "Sua coleção musical";
@@ -794,7 +788,6 @@ function updateHome() {
 
     if (songId === null || !getSong(songId)) {
       // com músicas na biblioteca, um espaço vazio de favoritos não faz nada
-      if (!songs.length) openFilePicker();
       return;
     }
 
