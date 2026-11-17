@@ -753,7 +753,7 @@ public class MusicaPlugin extends Plugin {
                     long albumId = albumIdColumn >= 0 && !cursor.isNull(albumIdColumn) ? cursor.getLong(albumIdColumn) : 0L;
                     item.put("albumId", albumId);
                     item.put("artworkUri", albumId > 0 ? Uri.parse("content://media/"
-                            + (modern ? volume : "external") + "/audio/albumart/" + albumId).toString() : "");
+                            + (modern ? volumeName : "external") + "/audio/albumart/" + albumId).toString() : "");
                     item.put("genre", "");
                     item.put("duration", durationColumn >= 0 && !cursor.isNull(durationColumn) ? cursor.getLong(durationColumn) : 0L);
                     item.put("sourceKey", "android-mediastore::" + volumeName + "::" + id + "::" + size + "::" + modifiedSeconds);
