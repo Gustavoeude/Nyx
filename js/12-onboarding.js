@@ -2,8 +2,8 @@
 
 /* ==========================================================
    Onboarding da primeira abertura (tela cheia, passo a passo)
-   Reaproveita importFolder, openFilePicker, addDirectory e
-   MN.requestNotifications. Visual Material 3 Expressive (forma que se transforma, progresso ondulado).
+   Usa a busca automática do aparelho e MN.requestNotifications.
+   Visual Material 3 Expressive (forma que se transforma, progresso ondulado).
    Cada passo com ação mostra o resultado (ex.: a pasta escolhida)
    e libera o botão "Continuar".
    ========================================================== */
@@ -24,7 +24,8 @@ function obIcon(name) {
 }
 
 function obHasNative() {
-  return !!(MN && typeof MN.pickFolder === "function");
+  return !!(MN && typeof MN.requestAudioLibraryAccess === "function"
+    && typeof MN.listMediaAudioFolders === "function");
 }
 
 const obSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -151,12 +152,12 @@ function obAllIgnoreRows() {
 async function obRequestMediaAudioAccess() {
   if (!MN || typeof MN.requestAudioLibraryAccess !== "function"
       || typeof MN.listMediaAudioFolders !== "function") {
-    return { label: "Busca do aparelho indisponível", sub: "Escolha uma pasta manualmente para importar músicas.", warn: true };
+    return { label: "Busca do aparelho indisponível", sub: "Use o aplicativo Android para buscar automaticamente suas músicas.", warn: true };
   }
   try {
     const access = await MN.requestAudioLibraryAccess();
     if (!access || !access.granted) {
-      return { label: "Permissão não concedida", sub: "Você pode tentar de novo ou escolher uma pasta manualmente.", warn: true };
+      return { label: "Permissão não concedida", sub: "Você pode tentar de novo depois nas configurações do Android.", warn: true };
     }
     const result = await MN.listMediaAudioFolders();
     obMediaFolders = Array.isArray(result && result.folders) ? result.folders : [];
@@ -167,13 +168,13 @@ async function obRequestMediaAudioAccess() {
     obCommitted = false;
     const count = obMediaFolders.reduce((sum, folder) => sum + (Number(folder.count) || 0), 0);
     if (!count) {
-      return { label: "Nenhum áudio encontrado", sub: "Você ainda pode escolher uma pasta manualmente.", warn: true };
+      return { label: "Nenhum áudio encontrado", sub: "Você pode tentar novamente depois nas configurações do Android.", warn: true };
     }
     return { label: "Áudios encontrados", sub: obPlural(obMediaFolders.length, "pasta", "pastas")
       + " · " + obPlural(count, "áudio", "áudios") };
   } catch (error) {
     logErr("onboarding:media-scan", error);
-    return { label: "Não foi possível ler os áudios", sub: "Confira a permissão do Android ou escolha uma pasta manualmente.", warn: true };
+    return { label: "Não foi possível ler os áudios", sub: "Confira a permissão do Android e tente novamente.", warn: true };
   }
 }
 
@@ -354,7 +355,7 @@ function obExtra(step) {
     box.appendChild(chips);
   } else if (step.key === "musicas") {
     const tip = el("div", "ob-tip");
-    tip.innerHTML = obIcon("info") + "<span>Com a permissão, o Nyx procura áudios no aparelho. Se preferir, escolha uma pasta manualmente.</span>";
+    tip.innerHTML = obIcon("info") + "<span>Com a permissão, o Nyx procura automaticamente os áudios no aparelho.</span>";
     box.appendChild(tip);
   } else if (step.key === "avisos") {
     const lock = el("div", "ob-lock");
@@ -395,16 +396,13 @@ function obSteps() {
   steps.push({
       key: "musicas", title: "Suas músicas", icon: "library_music", shape: [6, 0.1],
       text: native
-        ? "Permita que o Nyx encontre áudios em todas as pastas do aparelho. Depois você escolhe o que quer ignorar."
-        : "Escolha arquivos de áudio ou uma pasta para montar sua biblioteca. O app só recebe o que você selecionar.",
-      primary: native ? "Permitir acesso aos áudios" : "Escolher arquivos",
-      busy: native ? "Procurando áudios…" : "Importando…",
-      secondary: native ? "Escolher pasta manualmente" : "",
-      secondaryAlways: native,
-      again: native ? "Buscar novamente" : "Escolher mais arquivos",
-      againRun: native ? obRequestMediaAudioAccess : obPickFiles,
-      run: native ? obRequestMediaAudioAccess : obPickWeb,
-      runSecondary: native ? obPickFolder : obPickFiles,
+        ? "Permita que o Nyx encontre áudios automaticamente em todas as pastas do aparelho. Depois você escolhe o que quer ignorar."
+        : "A busca automática da biblioteca está disponível no aplicativo Android.",
+      primary: native ? "Permitir acesso aos áudios" : "Continuar",
+      busy: "Procurando áudios…",
+      again: native ? "Buscar novamente" : "Continuar",
+      againRun: native ? obRequestMediaAudioAccess : null,
+      run: native ? obRequestMediaAudioAccess : null,
       orbit: ["folder", "music_note", "playlist_add"]
   });
   if (native) {
@@ -448,53 +446,6 @@ function obSteps() {
     }
   }
   return steps;
-}
-
-// Navegador (PWA): sem pasta monitorada, só arquivos.
-async function obPickWeb() {
-  return obPickFiles();
-}
-
-// Abre o seletor de arquivos e descobre se a pessoa escolheu algo ou cancelou
-// (cancelar não pode deixar o botão preso em "carregando").
-function obFilePickerOutcome() {
-  return new Promise(resolve => {
-    const input = $("fileInput");
-    let finished = false;
-    const timers = [];
-    const finish = v => {
-      if (finished) return;
-      finished = true;
-      timers.forEach(clearTimeout);
-      input.removeEventListener("change", onChange);
-      input.removeEventListener("cancel", onCancel);
-      window.removeEventListener("focus", onBack);
-      document.removeEventListener("visibilitychange", onVis);
-      resolve(v);
-    };
-    const onChange = () => finish(true);
-    const onCancel = () => finish(false);
-    // Ao voltar para o app sem o evento "change", espera um pouco e considera cancelado.
-    const onBack = () => timers.push(setTimeout(() => { if (!(input.files && input.files.length)) finish(false); }, 1500));
-    const onVis = () => { if (!document.hidden) onBack(); };
-    input.addEventListener("change", onChange);
-    input.addEventListener("cancel", onCancel);
-    window.addEventListener("focus", onBack);
-    document.addEventListener("visibilitychange", onVis);
-    timers.push(setTimeout(() => finish(false), 10 * 60 * 1000));
-    openFilePicker();
-  });
-}
-
-async function obPickFiles() {
-  const before = songs.length;
-  if (!(await obFilePickerOutcome())) return null;
-  await fileImportTask;
-  const added = songs.length - before;
-  if (added > 0) {
-    return { label: "Arquivos adicionados", sub: obPlural(added, "música adicionada", "músicas adicionadas") };
-  }
-  return { label: "Nenhuma música nova adicionada", sub: "Selecione arquivos de áudio para continuar.", warn: true, retry: true };
 }
 
 let obRoot = null;
