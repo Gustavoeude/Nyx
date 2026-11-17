@@ -716,6 +716,7 @@ async function importMediaAudioFolders(folders, options = {}) {
   let added = 0;
   let failed = 0;
   let sinceRefresh = 0;
+  let firstSongRendered = false;
 
   for (const folder of active) {
     let afterId = "";
@@ -764,7 +765,13 @@ async function importMediaAudioFolders(folders, options = {}) {
         processed++;
         sinceRefresh++;
         if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
-        if (sinceRefresh >= 8) {
+        // Mostre a primeira faixa assim que ela estiver salva. Depois, atualize
+        // em lotes menores para não deixar a biblioteca parecer vazia durante a busca.
+        if (added > 0 && !firstSongRendered) {
+          refreshAll();
+          firstSongRendered = true;
+          sinceRefresh = 0;
+        } else if (sinceRefresh >= 4) {
           refreshAll();
           sinceRefresh = 0;
         }
