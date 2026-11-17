@@ -268,13 +268,22 @@ function obCommit() {
   obUpdateStatus();
   const tasks = [];
   if (obChosen.length) tasks.push(syncWatchedFolder(true, { cachedListings: obScan, skipPathsByUri }));
-  if (mediaToImport.length) tasks.push(importMediaAudioFolders(mediaToImport, {
-    excludedFolders: excludedMedia,
-    onProgress: () => obUpdateStatus()
-  }).catch(e => {
-    logErr("onboarding:media-import", e);
-    showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
-  }));
+  if (obMediaScanComplete) {
+    // Usa a mesma consulta global paginada da biblioteca principal: as músicas
+    // aparecem por páginas, sem copiar ou processar uma pasta inteira antes.
+    tasks.push(syncMediaAudioLibrary(false).catch(e => {
+      logErr("onboarding:media-global-import", e);
+    }));
+  } else if (mediaToImport.length) {
+    // Compatibilidade para o fluxo web/SAF antigo, sem MediaStore disponível.
+    tasks.push(importMediaAudioFolders(mediaToImport, {
+      excludedFolders: excludedMedia,
+      onProgress: () => obUpdateStatus()
+    }).catch(e => {
+      logErr("onboarding:media-import", e);
+      showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
+    }));
+  }
   Promise.allSettled(tasks).finally(() => {
     st.done = true;
     obUpdateStatus();
