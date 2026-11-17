@@ -167,6 +167,9 @@ function lsSet(key, value) {
    ========================================================== */
 const DB_NAME = "musica-db";
 const STORE = "songs";
+const DB_VERSION = 2;
+const LYRICS_STORE = "lyrics";
+const ARTWORKS_STORE = "artworks";
 let storageIssueReported = false;
 
 function reportStorageIssue() {
@@ -177,9 +180,32 @@ function reportStorageIssue() {
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE, { keyPath: "id" });
+      const db = req.result;
+      const songsStore = db.objectStoreNames.contains(STORE)
+        ? req.transaction.objectStore(STORE)
+        : db.createObjectStore(STORE, { keyPath: "id" });
+      const indexes = [
+        ["sourceKey", "sourceKey", { unique: false }],
+        ["sourceUri", "sourceUri", { unique: false }],
+        ["favorite", "favorite", { unique: false }],
+        ["lastPlayed", "lastPlayed", { unique: false }],
+        ["playCount", "playCount", { unique: false }]
+      ];
+      indexes.forEach(([name, path, options]) => {
+        if (!songsStore.indexNames.contains(name)) songsStore.createIndex(name, path, options);
+      });
+      if (!db.objectStoreNames.contains(LYRICS_STORE)) {
+        const lyricsStore = db.createObjectStore(LYRICS_STORE, { keyPath: "trackId" });
+        lyricsStore.createIndex("source", "source", { unique: false });
+        lyricsStore.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(ARTWORKS_STORE)) {
+        const artworkStore = db.createObjectStore(ARTWORKS_STORE, { keyPath: "trackId" });
+        artworkStore.createIndex("artworkUri", "artworkUri", { unique: false });
+        artworkStore.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -208,8 +234,24 @@ async function dbPut(record) {
   return new Promise(resolve => {
     let tx;
     try {
-      tx = db.transaction(STORE, "readwrite");
+      tx = db.transaction([STORE, LYRICS_STORE, ARTWORKS_STORE], "readwrite");
       tx.objectStore(STORE).put(record);
+      tx.objectStore(LYRICS_STORE).put({
+        trackId: record.id,
+        text: record.lyrics || "",
+        source: record.lyricsSource || "",
+        sourceId: record.lyricsSourceId || null,
+        searchAt: record.lyricsSearchAt || 0,
+        retryAt: record.lyricsRetryAt || 0,
+        retryReason: record.lyricsRetryReason || "",
+        updatedAt: Date.now()
+      });
+      tx.objectStore(ARTWORKS_STORE).put({
+        trackId: record.id,
+        artworkUri: record.artworkUri || "",
+        blob: record.coverBlob || null,
+        updatedAt: Date.now()
+      });
     } catch {
       reportStorageIssue();
       resolve(false);
@@ -229,8 +271,10 @@ async function dbDelete(id) {
   return new Promise(resolve => {
     let tx;
     try {
-      tx = db.transaction(STORE, "readwrite");
+      tx = db.transaction([STORE, LYRICS_STORE, ARTWORKS_STORE], "readwrite");
       tx.objectStore(STORE).delete(id);
+      tx.objectStore(LYRICS_STORE).delete(id);
+      tx.objectStore(ARTWORKS_STORE).delete(id);
     } catch {
       reportStorageIssue();
       resolve(false);
@@ -255,12 +299,45 @@ async function dbGetAll() {
       resolve(records);
     };
     try {
-      const tx = db.transaction(STORE);
-      const req = tx.objectStore(STORE).getAll();
-      req.onsuccess = () => finish(req.result || []);
-      req.onerror = () => {
-        reportStorageIssue();
-        finish([]);
+      const tx = db.transaction([STORE, LYRICS_STORE, ARTWORKS_STORE]);
+      const songsReq = tx.objectStore(STORE).getAll();
+      const lyricsReq = tx.objectStore(LYRICS_STORE).getAll();
+      const artworkReq = tx.objectStore(ARTWORKS_STORE).getAll();
+      let records = [];
+      let lyrics = [];
+      let artworks = [];
+      let failed = false;
+      songsReq.onsuccess = () => { records = songsReq.result || []; };
+      lyricsReq.onsuccess = () => { lyrics = lyricsReq.result || []; };
+      artworkReq.onsuccess = () => { artworks = artworkReq.result || []; };
+      [songsReq, lyricsReq, artworkReq].forEach(req => {
+        req.onerror = () => { failed = true; };
+      });
+      tx.oncomplete = () => {
+        if (failed) {
+          reportStorageIssue();
+          finish([]);
+          return;
+        }
+        const lyricsById = new Map(lyrics.map(item => [item.trackId, item]));
+        const artworkById = new Map(artworks.map(item => [item.trackId, item]));
+        const merged = records.map(record => {
+          const l = lyricsById.get(record.id);
+          const a = artworkById.get(record.id);
+          return {
+            ...record,
+            lyrics: l ? l.text || "" : record.lyrics || "",
+            lyricsSource: l ? l.source || "" : record.lyricsSource || "",
+            lyricsSourceId: l ? l.sourceId || null : record.lyricsSourceId || null,
+            lyricsSearchAt: l ? l.searchAt || 0 : record.lyricsSearchAt || 0,
+            lyricsRetryAt: l ? l.retryAt || 0 : record.lyricsRetryAt || 0,
+            lyricsRetryReason: l ? l.retryReason || "" : record.lyricsRetryReason || "",
+            artworkUri: a ? a.artworkUri || record.artworkUri || "" : record.artworkUri || "",
+            coverBlob: a && a.blob ? a.blob : record.coverBlob || null
+          };
+        });
+        migrateLegacyStructuredRecords(records);
+        finish(merged);
       };
       tx.onerror = tx.onabort = () => {
         reportStorageIssue();
@@ -269,6 +346,40 @@ async function dbGetAll() {
     } catch {
       reportStorageIssue();
       finish([]);
+    }
+  });
+}
+
+function migrateLegacyStructuredRecords(records) {
+  if (lsGet("structuredDbMigrationV2", false) || !Array.isArray(records) || !records.length) return;
+  dbReady.then(db => {
+    if (!db) return;
+    try {
+      const tx = db.transaction([LYRICS_STORE, ARTWORKS_STORE], "readwrite");
+      const lyricsStore = tx.objectStore(LYRICS_STORE);
+      const artworkStore = tx.objectStore(ARTWORKS_STORE);
+      records.forEach(record => {
+        lyricsStore.put({
+          trackId: record.id,
+          text: record.lyrics || "",
+          source: record.lyricsSource || "",
+          sourceId: record.lyricsSourceId || null,
+          searchAt: record.lyricsSearchAt || 0,
+          retryAt: record.lyricsRetryAt || 0,
+          retryReason: record.lyricsRetryReason || "",
+          updatedAt: Date.now()
+        });
+        artworkStore.put({
+          trackId: record.id,
+          artworkUri: record.artworkUri || "",
+          blob: record.coverBlob || null,
+          updatedAt: Date.now()
+        });
+      });
+      tx.oncomplete = () => lsSet("structuredDbMigrationV2", true);
+      tx.onerror = tx.onabort = () => reportStorageIssue();
+    } catch (_) {
+      reportStorageIssue();
     }
   });
 }
@@ -335,4 +446,3 @@ function makeSong(r) {
     seed: null
   };
 }
-
