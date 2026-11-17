@@ -853,21 +853,46 @@ async function importMediaAudioLibraryDirect(options = {}) {
       try {
         const canonical = mediaAudioCanonicalFileKey(page.volumeName, item.relativePath || "", item.name);
         const excludedItem = mediaAudioFolderIsExcluded({ volumeName: page.volumeName, relativePath: item.relativePath || "" }, excluded);
-        if (!excludedItem && canonical && !existing.has(canonical)) {
-          const song = directMediaAudioSong(item, page.volumeName, canonical);
-          songs.push(song);
-          existing.add(canonical);
-          if (!await dbPut(toRecord(song))) throw new Error("não foi possível salvar a música");
-          added++;
-          if (!firstRendered) {
-            refreshAll();
-            firstRendered = true;
-            sinceRefresh = 0;
+        if (!excludedItem && canonical) {
+          const existingSong = songs.find(song =>
+            mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "") === canonical
+          );
+          if (existingSong) {
+            let metadataChanged = false;
+            if (!existingSong.sourceUri && item.uri) {
+              existingSong.sourceUri = String(item.uri);
+              metadataChanged = true;
+            }
+            if (!existingSong.artworkUri && item.artworkUri) {
+              existingSong.artworkUri = String(item.artworkUri);
+              metadataChanged = true;
+            }
+            if (!existingSong.duration && Number(item.duration) > 0) {
+              existingSong.duration = Number(item.duration);
+              metadataChanged = true;
+            }
+            if (metadataChanged) await dbPut(toRecord(existingSong));
+            if (!existingSong.coverBlob) {
+              loadMediaStoreCover(existingSong).then(found => {
+                if (!found && settings.autoCovers) fetchOnlineCover(existingSong);
+              });
+            }
+          } else if (!existing.has(canonical)) {
+            const song = directMediaAudioSong(item, page.volumeName, canonical);
+            songs.push(song);
+            existing.add(canonical);
+            if (!await dbPut(toRecord(song))) throw new Error("não foi possível salvar a música");
+            added++;
+            if (!firstRendered) {
+              refreshAll();
+              firstRendered = true;
+              sinceRefresh = 0;
+            }
+            loadMediaStoreCover(song).then(found => {
+              if (!found && settings.autoCovers) fetchOnlineCover(song);
+            });
+            if (settings.autoLyrics) requestOnlineLyrics(song);
           }
-          loadMediaStoreCover(song).then(found => {
-            if (!found && settings.autoCovers) fetchOnlineCover(song);
-          });
-          if (settings.autoLyrics) requestOnlineLyrics(song);
         }
       } catch (e) {
         failed++;
