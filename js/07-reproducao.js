@@ -507,10 +507,23 @@ async function nativeEnsureCover(song) {
 }
 
 async function nativeItem(song) {
-  const info = await nativeEnsureFile(song);
+  let path = "";
+  if (!song.sourceUri) {
+    const info = await nativeEnsureFile(song);
+    path = info.path;
+  }
   let cover = "";
   try { cover = await nativeEnsureCover(song); } catch (e) { logErr("reproducao:473", e); }
-  return { id: String(song.id), path: info.path, title: song.name || "Música", artist: song.artist || "", cover };
+  return {
+    id: String(song.id),
+    path,
+    uri: song.sourceUri || "",
+    title: song.name || "Música",
+    artist: song.artist || "",
+    album: song.album || "",
+    duration: Number(song.duration) || 0,
+    cover
+  };
 }
 
 async function nativeStart(song, autoplay, startAt) {

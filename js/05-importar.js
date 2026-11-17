@@ -700,6 +700,110 @@ async function readMediaAudioFile(item, volumeName) {
   return file;
 }
 
+function directMediaAudioSong(item, volumeName, canonical) {
+  const name = String(item && item.name || "áudio");
+  const baseName = name.replace(/\.[^/.]+$/, "").trim() || "Música";
+  const title = String(item && item.title || baseName).trim() || baseName;
+  const artist = String(item && item.artist || "Arquivo local").trim() || "Arquivo local";
+  const sourceUri = String(item && item.uri || "");
+  if (!sourceUri.startsWith("content://")) throw new Error("URI MediaStore inválido");
+  const file = new File([], name, {
+    type: item.mimeType || "application/octet-stream",
+    lastModified: Math.max(0, Number(item.lastModified) || 0)
+  });
+  try { Object.defineProperty(file, "sourceDocumentId", { value: canonical }); } catch (_) {}
+  try { Object.defineProperty(file, "sourcePath", { value: [item.relativePath || "", name].filter(Boolean).join("/") }); } catch (_) {}
+  return {
+    id: "android-" + canonical,
+    name: title,
+    artist,
+    album: String(item && item.album || ""),
+    genre: String(item && item.genre || ""),
+    sourceKey: canonical,
+    sourceUri,
+    duration: Math.max(0, Number(item && item.duration) || 0),
+    favorite: false,
+    file,
+    url: URL.createObjectURL(file),
+    coverBlob: null,
+    cover: null,
+    playCount: 0,
+    lastPlayed: 0,
+    lyrics: "",
+    lyricsSource: "",
+    lyricsSourceId: null,
+    lyricsSearchAt: 0,
+    lyricsRetryAt: 0,
+    lyricsRetryReason: "",
+    seed: null
+  };
+}
+
+async function importMediaAudioFoldersDirect(folders, options = {}) {
+  const excluded = options.excludedFolders || getMediaAudioImportExclusions();
+  const active = (Array.isArray(folders) ? folders : []).filter(folder => !mediaAudioFolderIsExcluded(folder, excluded));
+  const expected = active.reduce((sum, folder) => sum + (Number(folder.count) || 0), 0);
+  const existing = new Set();
+  songs.forEach(song => {
+    const key = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "");
+    if (key) existing.add(key);
+  });
+  let processed = 0;
+  let added = 0;
+  let failed = 0;
+  let sinceRefresh = 0;
+  let firstRendered = false;
+  for (const folder of active) {
+    let afterId = "";
+    let done = false;
+    while (!done) {
+      const page = await MN.listMediaAudioFiles({
+        volumeName: folder.volumeName,
+        relativePath: normalizeMediaAudioPath(folder.relativePath),
+        afterId,
+        limit: 50
+      });
+      const items = Array.isArray(page && page.items) ? page.items : [];
+      for (const item of items) {
+        try {
+          const itemFolder = { volumeName: folder.volumeName, relativePath: item.relativePath || folder.relativePath };
+          const canonical = mediaAudioCanonicalFileKey(folder.volumeName, item.relativePath || folder.relativePath, item.name);
+          if (!mediaAudioFolderIsExcluded(itemFolder, excluded) && canonical && !existing.has(canonical)) {
+            const song = directMediaAudioSong(item, folder.volumeName, canonical);
+            songs.push(song);
+            existing.add(canonical);
+            const stored = await dbPut(toRecord(song));
+            if (!stored) throw new Error("não foi possível salvar a música");
+            added++;
+            if (!firstRendered) {
+              refreshAll();
+              firstRendered = true;
+              sinceRefresh = 0;
+            }
+            if (!song.coverBlob && settings.autoCovers) fetchOnlineCover(song);
+            if (settings.autoLyrics) requestOnlineLyrics(song);
+          }
+        } catch (e) {
+          failed++;
+          logErr("media-audio:direct-import", e);
+        }
+        processed++;
+        sinceRefresh++;
+        if (typeof options.onProgress === "function") options.onProgress({ processed, expected, added, failed, item });
+        if (sinceRefresh >= 8) {
+          refreshAll();
+          sinceRefresh = 0;
+        }
+      }
+      const next = String(page && page.nextAfterId || "");
+      done = !!(page && page.done) || !items.length || !next || next === afterId;
+      afterId = next;
+    }
+  }
+  refreshAll();
+  return { processed, expected, added, failed, direct: true };
+}
+
 async function importMediaAudioFolders(folders, options = {}) {
   if (!MN || typeof MN.listMediaAudioFiles !== "function") {
     throw new Error("A busca de áudios do aparelho não está disponível nesta versão do Nyx.");
@@ -799,7 +903,15 @@ async function runMediaAudioSync(manual) {
   const result = await MN.listMediaAudioFolders();
   const folders = Array.isArray(result && result.folders) ? result.folders : [];
   setMediaAudioFoldersCache(folders);
-  const imported = await importMediaAudioFolders(folders);
+  let imported;
+  try {
+    imported = typeof MN.listMediaAudioFiles === "function"
+      ? await importMediaAudioFoldersDirect(folders)
+      : await importMediaAudioFolders(folders);
+  } catch (directError) {
+    logErr("media-audio:direct-fallback", directError);
+    imported = await importMediaAudioFolders(folders);
+  }
   if (manual) {
     if (imported.failed) showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
     else if (imported.added) showToast(imported.added + (imported.added === 1 ? " áudio novo importado" : " áudios novos importados"));

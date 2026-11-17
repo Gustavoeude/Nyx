@@ -647,7 +647,11 @@ public class MusicaPlugin extends Plugin {
                         MediaStore.Audio.Media.RELATIVE_PATH,
                         MediaStore.Audio.Media.MIME_TYPE,
                         MediaStore.Audio.Media.SIZE,
-                        MediaStore.Audio.Media.DATE_MODIFIED
+                        MediaStore.Audio.Media.DATE_MODIFIED,
+                        MediaStore.Audio.Media.TITLE,
+                        MediaStore.Audio.Media.ARTIST,
+                        MediaStore.Audio.Media.ALBUM,
+                        MediaStore.Audio.Media.DURATION
                 };
                 if (relativePath.isEmpty()) {
                     selection = MediaStore.Audio.Media.VOLUME_NAME + " = ? AND ("
@@ -673,7 +677,11 @@ public class MusicaPlugin extends Plugin {
                         MediaStore.Audio.Media.DATA,
                         MediaStore.Audio.Media.MIME_TYPE,
                         MediaStore.Audio.Media.SIZE,
-                        MediaStore.Audio.Media.DATE_MODIFIED
+                        MediaStore.Audio.Media.DATE_MODIFIED,
+                        MediaStore.Audio.Media.TITLE,
+                        MediaStore.Audio.Media.ARTIST,
+                        MediaStore.Audio.Media.ALBUM,
+                        MediaStore.Audio.Media.DURATION
                 };
                 String parentExpr = "CASE WHEN length(" + MediaStore.Audio.Media.DATA + ") = length("
                         + MediaStore.Audio.Media.DISPLAY_NAME + ") + 1 THEN '/' ELSE substr("
@@ -704,6 +712,10 @@ public class MusicaPlugin extends Plugin {
                 int mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE);
                 int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
                 int modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED);
+                int titleColumn = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE);
+                int artistColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST);
+                int albumColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+                int durationColumn = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION);
                 int returned = 0;
                 while (cursor.moveToNext()) {
                     long id = cursor.getLong(idColumn);
@@ -732,6 +744,11 @@ public class MusicaPlugin extends Plugin {
                     item.put("mimeType", mimeType);
                     item.put("size", size);
                     item.put("lastModified", lastModified);
+                    item.put("title", titleColumn >= 0 && !cursor.isNull(titleColumn) ? cursor.getString(titleColumn) : name.replaceFirst("\\.[^.]+$", ""));
+                    item.put("artist", artistColumn >= 0 && !cursor.isNull(artistColumn) ? cursor.getString(artistColumn) : "Arquivo local");
+                    item.put("album", albumColumn >= 0 && !cursor.isNull(albumColumn) ? cursor.getString(albumColumn) : "");
+                    item.put("genre", "");
+                    item.put("duration", durationColumn >= 0 && !cursor.isNull(durationColumn) ? cursor.getLong(durationColumn) : 0L);
                     item.put("sourceKey", "android-mediastore::" + volumeName + "::" + id + "::" + size + "::" + modifiedSeconds);
                     resultItems.put(item);
                     nextAfterId = Long.toString(id);
