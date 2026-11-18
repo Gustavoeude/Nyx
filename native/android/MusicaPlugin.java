@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
@@ -962,6 +963,39 @@ public class MusicaPlugin extends Plugin {
             call.reject("Audio artwork access denied: " + e.getMessage());
         } catch (Exception e) {
             call.reject("Could not read MediaStore artwork: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Extrai a capa incorporada no áudio sem copiar o arquivo inteiro para o app.
+     * Quando existe, normalmente tem qualidade melhor que a miniatura do MediaStore.
+     */
+    @PluginMethod
+    public void readMediaAudioEmbeddedArtwork(PluginCall call) {
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            requireAudioLibraryPermission();
+            String rawUri = call.getString("uri", "");
+            if (rawUri == null || !rawUri.startsWith("content://")) {
+                throw new IllegalArgumentException("Invalid audio URI");
+            }
+            retriever.setDataSource(getContext(), Uri.parse(rawUri));
+            byte[] bytes = retriever.getEmbeddedPicture();
+            JSObject result = new JSObject();
+            if (bytes == null || bytes.length == 0 || bytes.length > 8 * 1024 * 1024) {
+                result.put("base64", "");
+                call.resolve(result);
+                return;
+            }
+            result.put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            result.put("mimeType", "image/jpeg");
+            call.resolve(result);
+        } catch (SecurityException e) {
+            call.reject("Embedded artwork access denied: " + e.getMessage());
+        } catch (Exception e) {
+            call.reject("Could not read embedded audio artwork: " + e.getMessage());
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
         }
     }
 

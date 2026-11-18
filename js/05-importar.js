@@ -770,9 +770,27 @@ function requestLyrics(song, force = false) {
 }
 
 async function loadMediaStoreCover(song) {
-  if (!song || song.coverBlob || !song.artworkUri || !MN || typeof MN.readMediaAudioArtwork !== "function") return false;
+  if (!song || song.coverBlob || !MN) return false;
   try {
-    const result = await MN.readMediaAudioArtwork({ uri: song.artworkUri });
+    const requests = [];
+    if (song.sourceUri && typeof MN.readMediaAudioEmbeddedArtwork === "function") {
+      requests.push(() => MN.readMediaAudioEmbeddedArtwork({ uri: song.sourceUri }));
+    }
+    if (song.artworkUri && typeof MN.readMediaAudioArtwork === "function") {
+      requests.push(() => MN.readMediaAudioArtwork({ uri: song.artworkUri }));
+    }
+    let result = null;
+    for (const request of requests) {
+      try {
+        const candidate = await request();
+        if (candidate && candidate.base64) {
+          result = candidate;
+          break;
+        }
+      } catch (error) {
+        logErr("media-audio:artwork-source", error);
+      }
+    }
     const base64 = String(result && result.base64 || "");
     if (!base64) return false;
     const binary = atob(base64);
