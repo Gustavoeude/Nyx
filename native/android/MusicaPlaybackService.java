@@ -316,10 +316,14 @@ public class MusicaPlaybackService extends MediaSessionService {
                 MediaNotification original = defaultProvider.createNotification(
                         mediaSession, mediaButtonPreferences, actionFactory, callback);
                 if (Build.VERSION.SDK_INT < 24) return original;
-                Notification customized = Notification.Builder.recoverBuilder(
-                                MusicaPlaybackService.this, original.notification)
-                        .setSmallIcon(R.drawable.ic_notification_music)
-                        .build();
+                Notification.Builder builder = Notification.Builder.recoverBuilder(
+                        MusicaPlaybackService.this, original.notification)
+                        .setSmallIcon(R.drawable.ic_notification_music);
+                // O MediaStyle fica colorizado automaticamente quando possui
+                // MediaSession. Desativar isso evita que o System UI tinja a
+                // capa como fundo dominante do cartão.
+                if (Build.VERSION.SDK_INT >= 26) builder.setColorized(false);
+                Notification customized = builder.build();
                 return new MediaNotification(original.notificationId, customized);
             }
 
