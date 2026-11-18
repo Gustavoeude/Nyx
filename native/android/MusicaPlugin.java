@@ -800,6 +800,8 @@ public class MusicaPlugin extends Plugin {
 
             Uri collection = modern ? MediaStore.Audio.Media.getContentUri(volume)
                     : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+            long modifiedAfterSeconds = Math.max(0L,
+                    (long) (double) call.getDouble("modifiedAfter", 0.0) / 1000L);
             String[] columns = new String[]{
                     MediaStore.Audio.Media._ID,
                     MediaStore.Audio.Media.DISPLAY_NAME,
@@ -813,12 +815,21 @@ public class MusicaPlugin extends Plugin {
                     MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.DURATION
             };
+            String modifiedClause = modifiedAfterSeconds > 0
+                    ? " AND " + MediaStore.Audio.Media.DATE_MODIFIED + " > ?" : "";
             String selection = modern
-                    ? MediaStore.Audio.Media.VOLUME_NAME + " = ? AND " + MediaStore.Audio.Media._ID + " > ?"
-                    : MediaStore.Audio.Media._ID + " > ?";
-            String[] args = modern
-                    ? new String[]{volume, Long.toString(afterId)}
-                    : new String[]{Long.toString(afterId)};
+                    ? MediaStore.Audio.Media.VOLUME_NAME + " = ? AND " + MediaStore.Audio.Media._ID + " > ?" + modifiedClause
+                    : MediaStore.Audio.Media._ID + " > ?" + modifiedClause;
+            String[] args;
+            if (modern) {
+                args = modifiedAfterSeconds > 0
+                        ? new String[]{volume, Long.toString(afterId), Long.toString(modifiedAfterSeconds)}
+                        : new String[]{volume, Long.toString(afterId)};
+            } else {
+                args = modifiedAfterSeconds > 0
+                        ? new String[]{Long.toString(afterId), Long.toString(modifiedAfterSeconds)}
+                        : new String[]{Long.toString(afterId)};
+            }
             JSArray resultItems = new JSArray();
             String nextAfterId = Long.toString(afterId);
             boolean pageDone = true;

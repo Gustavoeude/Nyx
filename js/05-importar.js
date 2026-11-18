@@ -901,10 +901,13 @@ async function importMediaAudioFoldersDirect(folders, options = {}) {
 
 async function importMediaAudioLibraryDirect(options = {}) {
   const excluded = options.excludedFolders || getMediaAudioImportExclusions();
-  const existing = new Set();
+  const incrementalSince = Math.max(0, Number(options.modifiedAfterMs) || 0);
+  const incremental = incrementalSince > 0;
+  const existing = new Map();
+  const seen = new Set();
   songs.forEach(song => {
     const key = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "");
-    if (key) existing.add(key);
+    if (key) existing.set(key, song);
   });
   let volumeName = "";
   let afterId = "";
@@ -915,28 +918,50 @@ async function importMediaAudioLibraryDirect(options = {}) {
   let firstRendered = false;
   let done = false;
   while (!done) {
-    const page = await MN.listMediaAudioLibrary({ volumeName, afterId, limit: 50 });
+    const page = await MN.listMediaAudioLibrary({
+      volumeName,
+      afterId,
+      modifiedAfter: incrementalSince,
+      limit: 50
+    });
     const items = Array.isArray(page && page.items) ? page.items : [];
     for (const item of items) {
       try {
         const canonical = mediaAudioCanonicalFileKey(page.volumeName, item.relativePath || "", item.name);
         const excludedItem = mediaAudioFolderIsExcluded({ volumeName: page.volumeName, relativePath: item.relativePath || "" }, excluded);
         if (!excludedItem && canonical) {
-          const existingSong = songs.find(song =>
-            mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "") === canonical
-          );
+          seen.add(canonical);
+          const existingSong = existing.get(canonical);
           if (existingSong) {
             let metadataChanged = false;
-            if (!existingSong.sourceUri && item.uri) {
-              existingSong.sourceUri = String(item.uri);
+            const nextUri = String(item.uri || "");
+            const nextArtworkUri = String(item.artworkUri || "");
+            const nextDuration = mediaStoreDurationSeconds(item.duration);
+            const nextName = String(item.title || existingSong.name || "").trim();
+            const nextArtist = String(item.artist || existingSong.artist || "").trim();
+            const nextAlbum = String(item.album || existingSong.album || "").trim();
+            if (nextUri && existingSong.sourceUri !== nextUri) {
+              existingSong.sourceUri = nextUri;
               metadataChanged = true;
             }
-            if (!existingSong.artworkUri && item.artworkUri) {
-              existingSong.artworkUri = String(item.artworkUri);
+            if (nextArtworkUri && existingSong.artworkUri !== nextArtworkUri) {
+              existingSong.artworkUri = nextArtworkUri;
               metadataChanged = true;
             }
-            if (!existingSong.duration && mediaStoreDurationSeconds(item.duration) > 0) {
-              existingSong.duration = mediaStoreDurationSeconds(item.duration);
+            if (nextDuration > 0 && existingSong.duration !== nextDuration) {
+              existingSong.duration = nextDuration;
+              metadataChanged = true;
+            }
+            if (nextName && existingSong.name !== nextName) {
+              existingSong.name = nextName;
+              metadataChanged = true;
+            }
+            if (nextArtist && existingSong.artist !== nextArtist) {
+              existingSong.artist = nextArtist;
+              metadataChanged = true;
+            }
+            if (existingSong.album !== nextAlbum) {
+              existingSong.album = nextAlbum;
               metadataChanged = true;
             }
             if (metadataChanged) await dbPut(toRecord(existingSong));
@@ -945,10 +970,10 @@ async function importMediaAudioLibraryDirect(options = {}) {
                 if (!found && settings.autoCovers) fetchOnlineCover(existingSong);
               });
             }
-          } else if (!existing.has(canonical)) {
+          } else {
             const song = directMediaAudioSong(item, page.volumeName, canonical);
             songs.push(song);
-            existing.add(canonical);
+            existing.set(canonical, song);
             if (!await dbPut(toRecord(song))) throw new Error("não foi possível salvar a música");
             added++;
             if (!firstRendered) {
@@ -981,8 +1006,22 @@ async function importMediaAudioLibraryDirect(options = {}) {
       throw new Error("MediaStore não avançou a paginação global");
     }
   }
+  let removed = 0;
+  if (!incremental) {
+    const stale = songs.filter(song => {
+      const canonical = mediaAudioCanonicalFromWatchedSourceKey(song.sourceKey || "");
+      return canonical && !seen.has(canonical) && !mediaAudioCanonicalKeyIsExcluded(canonical, excluded);
+    });
+    for (const song of stale) {
+      if (song.url) URL.revokeObjectURL(song.url);
+      if (song.cover) URL.revokeObjectURL(song.cover);
+      const index = songs.indexOf(song);
+      if (index >= 0) songs.splice(index, 1);
+      if (await dbDelete(song.id)) removed++;
+    }
+  }
   refreshAll();
-  return { processed, added, failed, direct: true };
+  return { processed, added, removed, failed, direct: true, incremental };
 }
 async function importMediaAudioFolders(folders, options = {}) {
   if (!MN || typeof MN.listMediaAudioFiles !== "function") {
@@ -1072,6 +1111,9 @@ async function importMediaAudioFolders(folders, options = {}) {
 let mediaAudioSyncPromise = null;
 let mediaAudioSyncRequested = false;
 let mediaAudioSyncManualRequested = false;
+const MEDIA_AUDIO_LAST_SYNC_KEY = "mediaAudioLastSyncAt";
+const MEDIA_AUDIO_FULL_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
+const MEDIA_AUDIO_SYNC_OVERLAP = 5 * 1000;
 
 async function runMediaAudioSync(manual) {
   if (typeof MN.hasAudioLibraryAccess !== "function" || typeof MN.listMediaAudioFolders !== "function") return null;
@@ -1080,10 +1122,17 @@ async function runMediaAudioSync(manual) {
     if (manual) showToast("Permita o acesso aos áudios nas configurações do Android para atualizar a biblioteca.");
     return null;
   }
+  const now = Date.now();
+  const lastSyncAt = Number(lsGet(MEDIA_AUDIO_LAST_SYNC_KEY, 0)) || 0;
+  const fullScan = manual || !lastSyncAt || now - lastSyncAt >= MEDIA_AUDIO_FULL_SYNC_INTERVAL;
   let imported;
   try {
     if (typeof MN.listMediaAudioLibrary === "function") {
-      imported = await importMediaAudioLibraryDirect();
+      imported = await importMediaAudioLibraryDirect({
+        // DATE_MODIFIED do MediaStore tem precisão de segundos; a sobreposição
+        // evita perder uma alteração feita exatamente na fronteira da sincronização.
+        modifiedAfterMs: fullScan ? 0 : Math.max(0, lastSyncAt - MEDIA_AUDIO_SYNC_OVERLAP)
+      });
     } else {
       const result = await MN.listMediaAudioFolders();
       const folders = Array.isArray(result && result.folders) ? result.folders : [];
@@ -1099,8 +1148,10 @@ async function runMediaAudioSync(manual) {
     setMediaAudioFoldersCache(folders);
     imported = await importMediaAudioFolders(folders);
   }
+  if (imported && imported.direct) lsSet(MEDIA_AUDIO_LAST_SYNC_KEY, now);
   if (manual) {
     if (imported.failed) showToast("Alguns áudios não puderam ser importados. Você pode tentar novamente em Ajustes.");
+    else if (imported.removed) showToast(imported.removed + (imported.removed === 1 ? " música removida" : " músicas removidas") + " da biblioteca");
     else if (imported.added) showToast(imported.added + (imported.added === 1 ? " áudio novo importado" : " áudios novos importados"));
     else showToast("A biblioteca já está atualizada.");
   }
