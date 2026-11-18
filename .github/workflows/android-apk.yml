@@ -76,6 +76,12 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Validar projeto
+        run: npm run test
+
+      - name: Verificar espaços e alterações inválidas
+        run: git diff --check
+
       - name: Preparar arquivos web
         run: npm run build:web
 
