@@ -793,6 +793,41 @@ async function loadMediaStoreCover(song) {
   }
 }
 
+// Evita abrir dezenas de streams de capas simultaneamente durante uma
+// sincronização grande. A faixa atual tem prioridade na fila.
+const MEDIA_ARTWORK_CONCURRENCY = 3;
+const mediaArtworkQueue = [];
+const mediaArtworkInFlight = new Map();
+let mediaArtworkActive = 0;
+
+function pumpMediaArtworkQueue() {
+  while (mediaArtworkActive < MEDIA_ARTWORK_CONCURRENCY && mediaArtworkQueue.length) {
+    mediaArtworkQueue.sort((a, b) =>
+      Number(b.song && b.song.id === currentId) - Number(a.song && a.song.id === currentId)
+    );
+    const job = mediaArtworkQueue.shift();
+    mediaArtworkActive++;
+    Promise.resolve(loadMediaStoreCover(job.song))
+      .then(job.resolve, job.reject)
+      .finally(() => {
+        mediaArtworkActive--;
+        pumpMediaArtworkQueue();
+      });
+  }
+}
+
+function queueMediaStoreCover(song) {
+  if (!song) return Promise.resolve(false);
+  if (mediaArtworkInFlight.has(song.id)) return mediaArtworkInFlight.get(song.id);
+  const task = new Promise((resolve, reject) => {
+    mediaArtworkQueue.push({ song, resolve, reject });
+    pumpMediaArtworkQueue();
+  });
+  const tracked = task.finally(() => mediaArtworkInFlight.delete(song.id));
+  mediaArtworkInFlight.set(song.id, tracked);
+  return tracked;
+}
+
 function directMediaAudioSong(item, volumeName, canonical) {
   const name = String(item && item.name || "áudio");
   const baseName = name.replace(/\.[^/.]+$/, "").trim() || "Música";
@@ -966,7 +1001,7 @@ async function importMediaAudioLibraryDirect(options = {}) {
             }
             if (metadataChanged) await dbPut(toRecord(existingSong));
             if (!existingSong.coverBlob) {
-              loadMediaStoreCover(existingSong).then(found => {
+              queueMediaStoreCover(existingSong).then(found => {
                 if (!found && settings.autoCovers) fetchOnlineCover(existingSong);
               });
             }
@@ -981,7 +1016,7 @@ async function importMediaAudioLibraryDirect(options = {}) {
               firstRendered = true;
               sinceRefresh = 0;
             }
-            loadMediaStoreCover(song).then(found => {
+            queueMediaStoreCover(song).then(found => {
               if (!found && settings.autoCovers) fetchOnlineCover(song);
             });
             if (settings.autoLyrics) requestOnlineLyrics(song);
