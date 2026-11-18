@@ -88,7 +88,7 @@ const pluginPath = path.join(root, "native/android/MusicaPlugin.java");
 if (fs.existsSync(pluginPath)) {
   const plugin = fs.readFileSync(pluginPath, "utf8");
   if (!plugin.includes("@CapacitorPlugin(name = \"MusicaNative\"")) fail("MusicaPlugin.java sem anotação Capacitor esperada");
-  for (const method of ["listMediaAudioLibrary", "readMediaAudioArtwork", "requestAudioLibraryAccess"]) {
+  for (const method of ["listMediaAudioLibrary", "readMediaAudioArtwork", "readMediaAudioEmbeddedArtwork", "requestAudioLibraryAccess"]) {
     if (!new RegExp(`\\b${method}\\s*\\(`).test(plugin)) fail(`MusicaPlugin.java sem método essencial: ${method}`);
   }
 }
