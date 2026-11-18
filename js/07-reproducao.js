@@ -333,37 +333,33 @@ function sendNative() {
   } catch (e) { logErr("reproducao:311", e); }
 }
 
-// Prepara a capa para a notificação e a tela de bloqueio sem reduzir a nitidez.
+// Prepara uma versão própria para a notificação; song.cover continua original
+// no player completo, enquanto o cartão do Android recebe um enquadramento
+// com margem para não aproximar demais rostos e elementos da capa.
 function nativeCoverFor(song) {
   if (!song.cover) return Promise.resolve("");
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
       try {
-        const original = song.coverBlob;
-        // Preserva os bytes originais de capas que já têm resolução suficiente.
-        // Recodificar também imagens retangulares para 1024px pode remover
-        // detalhes antes de o Android montar o cartão de mídia.
-        if (original && img.width <= 2048 && img.height <= 2048 && original.size <= 4000000) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const data = String(reader.result || "");
-            resolve(data.slice(data.indexOf(",") + 1) || "");
-          };
-          reader.onerror = () => resolve("");
-          reader.readAsDataURL(original);
-          return;
-        }
-        // 2048px preserva mais detalhes nas capas grandes; a qualidade alta
-        // reduz artefatos JPEG sem enviar imagens gigantes ao serviço nativo.
+        // A versão quadrada com 14% de margem reduz o recorte agressivo do
+        // System UI. O fundo ampliado mantém a aparência sem uma borda preta.
         const size = Math.min(2048, Math.max(1, Math.max(img.width, img.height)));
         const c = document.createElement("canvas");
         c.width = c.height = size;
         const x = c.getContext("2d");
         x.imageSmoothingEnabled = true;
         x.imageSmoothingQuality = "high";
-        const k = Math.max(size / img.width, size / img.height);
-        x.drawImage(img, (size - img.width * k) / 2, (size - img.height * k) / 2, img.width * k, img.height * k);
+        const fillScale = Math.max(size / img.width, size / img.height);
+        x.save();
+        x.filter = "blur(28px)";
+        x.drawImage(img, (size - img.width * fillScale) / 2, (size - img.height * fillScale) / 2,
+          img.width * fillScale, img.height * fillScale);
+        x.restore();
+        const safeSize = size * 0.86;
+        const fitScale = Math.min(safeSize / img.width, safeSize / img.height);
+        x.drawImage(img, (size - img.width * fitScale) / 2, (size - img.height * fitScale) / 2,
+          img.width * fitScale, img.height * fitScale);
         resolve(c.toDataURL("image/jpeg", 0.98).split(",")[1] || "");
       } catch (_) {
         resolve("");
