@@ -265,11 +265,8 @@ final class NyxWidgets {
             Bitmap cover = loadCover(coverPath, false);
             if (cover != null) v.setImageViewBitmap(R.id.w_cover, cover);
             else v.setImageViewResource(R.id.w_cover, R.mipmap.ic_launcher);
-            if (full && cover != null) {
-                // enfeite: o mesmo biscoito da capa, bem apagado, no canto
-                v.setImageViewBitmap(R.id.w_deco, cover);
-                v.setInt(R.id.w_deco, "setImageAlpha", 56);
-            }
+            // Não desenha uma segunda cópia decorativa da capa no canto.
+            // A capa principal já é exibida uma única vez no widget.
         }
 
         if (full) {

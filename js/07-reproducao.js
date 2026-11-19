@@ -333,34 +333,34 @@ function sendNative() {
   } catch (e) { logErr("reproducao:311", e); }
 }
 
-// Prepara uma versão própria para a notificação; song.cover continua original
-// no player completo, enquanto o cartão do Android recebe um enquadramento
-// com margem para não aproximar demais rostos e elementos da capa.
+// Prepara uma versão própria para a notificação preservando a capa inteira.
+// O Android/Pixel Launcher já faz o tratamento visual do cartão; enviar uma
+// segunda versão borrada criava uma capa duplicada e deixava a arte pequena.
 function nativeCoverFor(song) {
   if (!song.cover) return Promise.resolve("");
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
       try {
-        // A versão quadrada com 14% de margem reduz o recorte agressivo do
-        // System UI. O fundo ampliado mantém a aparência sem uma borda preta.
-        const size = Math.min(2048, Math.max(1, Math.max(img.width, img.height)));
+        // Usa uma tela horizontal de alta resolução e encaixa a capa inteira,
+        // sem recorte central e sem ampliar o rosto ou os elementos da arte.
+        // O fundo sólido evita voltar ao efeito de duas capas borradas.
+        const width = 2048;
+        const height = 1152;
         const c = document.createElement("canvas");
-        c.width = c.height = size;
+        c.width = width;
+        c.height = height;
         const x = c.getContext("2d");
         x.imageSmoothingEnabled = true;
         x.imageSmoothingQuality = "high";
-        const fillScale = Math.max(size / img.width, size / img.height);
-        x.save();
-        x.filter = "blur(28px)";
-        x.drawImage(img, (size - img.width * fillScale) / 2, (size - img.height * fillScale) / 2,
-          img.width * fillScale, img.height * fillScale);
-        x.restore();
-        const safeSize = size * 0.86;
-        const fitScale = Math.min(safeSize / img.width, safeSize / img.height);
-        x.drawImage(img, (size - img.width * fitScale) / 2, (size - img.height * fitScale) / 2,
-          img.width * fitScale, img.height * fitScale);
-        resolve(c.toDataURL("image/jpeg", 0.98).split(",")[1] || "");
+        x.fillStyle = "#101318";
+        x.fillRect(0, 0, width, height);
+        const padding = 48;
+        const scale = Math.min((width - padding * 2) / img.width, (height - padding * 2) / img.height);
+        const drawnWidth = img.width * scale;
+        const drawnHeight = img.height * scale;
+        x.drawImage(img, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight);
+        resolve(c.toDataURL("image/jpeg", 1.0).split(",")[1] || "");
       } catch (_) {
         resolve("");
       }
