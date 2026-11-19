@@ -333,34 +333,29 @@ function sendNative() {
   } catch (e) { logErr("reproducao:311", e); }
 }
 
-// Prepara uma versão própria para a notificação; song.cover continua original
-// no player completo, enquanto o cartão do Android recebe um enquadramento
-// com margem para não aproximar demais rostos e elementos da capa.
+// Prepara uma versão própria para a notificação sem reduzir a capa no centro.
+// O Android/Pixel Launcher já faz o tratamento visual do cartão; enviar uma
+// segunda versão borrada criava uma capa duplicada e deixava a arte pequena.
 function nativeCoverFor(song) {
   if (!song.cover) return Promise.resolve("");
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
       try {
-        // A versão quadrada com 14% de margem reduz o recorte agressivo do
-        // System UI. O fundo ampliado mantém a aparência sem uma borda preta.
+        // Usa a maior resolução disponível e preenche o quadro inteiro com a
+        // capa nítida. O recorte central é preferível ao fundo borrado, que
+        // fazia o cartão parecer ter duas capas.
         const size = Math.min(2048, Math.max(1, Math.max(img.width, img.height)));
         const c = document.createElement("canvas");
         c.width = c.height = size;
         const x = c.getContext("2d");
         x.imageSmoothingEnabled = true;
         x.imageSmoothingQuality = "high";
-        const fillScale = Math.max(size / img.width, size / img.height);
-        x.save();
-        x.filter = "blur(28px)";
-        x.drawImage(img, (size - img.width * fillScale) / 2, (size - img.height * fillScale) / 2,
-          img.width * fillScale, img.height * fillScale);
-        x.restore();
-        const safeSize = size * 0.86;
-        const fitScale = Math.min(safeSize / img.width, safeSize / img.height);
-        x.drawImage(img, (size - img.width * fitScale) / 2, (size - img.height * fitScale) / 2,
-          img.width * fitScale, img.height * fitScale);
-        resolve(c.toDataURL("image/jpeg", 0.98).split(",")[1] || "");
+        const scale = Math.max(size / img.width, size / img.height);
+        const width = img.width * scale;
+        const height = img.height * scale;
+        x.drawImage(img, (size - width) / 2, (size - height) / 2, width, height);
+        resolve(c.toDataURL("image/jpeg", 1.0).split(",")[1] || "");
       } catch (_) {
         resolve("");
       }

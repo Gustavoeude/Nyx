@@ -319,10 +319,8 @@ public class MusicaPlaybackService extends MediaSessionService {
                 Notification.Builder builder = Notification.Builder.recoverBuilder(
                         MusicaPlaybackService.this, original.notification)
                         .setSmallIcon(R.drawable.ic_notification_music);
-                // O MediaStyle fica colorizado automaticamente quando possui
-                // MediaSession. Desativar isso evita que o System UI tinja a
-                // capa como fundo dominante do cartão.
-                if (Build.VERSION.SDK_INT >= 26) builder.setColorized(false);
+                // Mantém o tratamento nativo da arte pelo System UI/Pixel
+                // Launcher, que usa a capa como fundo do cartão de mídia.
                 Notification customized = builder.build();
                 return new MediaNotification(original.notificationId, customized);
             }
