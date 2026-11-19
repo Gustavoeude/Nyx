@@ -333,7 +333,7 @@ function sendNative() {
   } catch (e) { logErr("reproducao:311", e); }
 }
 
-// Prepara uma versão própria para a notificação sem reduzir a capa no centro.
+// Prepara uma versão própria para a notificação preservando a capa inteira.
 // O Android/Pixel Launcher já faz o tratamento visual do cartão; enviar uma
 // segunda versão borrada criava uma capa duplicada e deixava a arte pequena.
 function nativeCoverFor(song) {
@@ -342,19 +342,24 @@ function nativeCoverFor(song) {
     const img = new Image();
     img.onload = () => {
       try {
-        // Usa a maior resolução disponível e preenche o quadro inteiro com a
-        // capa nítida. O recorte central é preferível ao fundo borrado, que
-        // fazia o cartão parecer ter duas capas.
-        const size = Math.min(2048, Math.max(1, Math.max(img.width, img.height)));
+        // Usa uma tela horizontal de alta resolução e encaixa a capa inteira,
+        // sem recorte central e sem ampliar o rosto ou os elementos da arte.
+        // O fundo sólido evita voltar ao efeito de duas capas borradas.
+        const width = 2048;
+        const height = 1152;
         const c = document.createElement("canvas");
-        c.width = c.height = size;
+        c.width = width;
+        c.height = height;
         const x = c.getContext("2d");
         x.imageSmoothingEnabled = true;
         x.imageSmoothingQuality = "high";
-        const scale = Math.max(size / img.width, size / img.height);
-        const width = img.width * scale;
-        const height = img.height * scale;
-        x.drawImage(img, (size - width) / 2, (size - height) / 2, width, height);
+        x.fillStyle = "#101318";
+        x.fillRect(0, 0, width, height);
+        const padding = 48;
+        const scale = Math.min((width - padding * 2) / img.width, (height - padding * 2) / img.height);
+        const drawnWidth = img.width * scale;
+        const drawnHeight = img.height * scale;
+        x.drawImage(img, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight);
         resolve(c.toDataURL("image/jpeg", 1.0).split(",")[1] || "");
       } catch (_) {
         resolve("");
