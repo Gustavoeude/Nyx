@@ -203,11 +203,32 @@ function playNext() {
 }
 
 function playPrev() {
-  if (audio.currentTime > 3) {
+  // Depois que a faixa terminou, "anterior" deve navegar; não reiniciar a faixa
+  // encerrada. No meio da faixa, mantém o comportamento conhecido de voltar ao início.
+  const ended = !!audio._ended || (isFinite(audio.duration) && audio.duration > 0
+    && audio.currentTime >= audio.duration - 0.25);
+  if (!ended && audio.currentTime > 3) {
     audio.currentTime = 0;
     return;
   }
 
+  // Em reprodução normal, a fila é a fonte de verdade. O histórico salvo pode
+  // conter faixas de uma sessão anterior e fazer "anterior" saltar para longe.
+  if (!shuffle) {
+    const idx = queue.indexOf(currentId);
+    if (idx > 0) {
+      playSong(queue[idx - 1], null, true);
+      return;
+    }
+    if (queue.length > 1 && repeat === "all") {
+      playSong(queue[queue.length - 1], null, true);
+      return;
+    }
+    audio.currentTime = 0;
+    return;
+  }
+
+  // No aleatório, o histórico representa a ordem real em que as faixas tocaram.
   while (playHistory.length) {
     const id = playHistory.pop();
     if (getSong(id)) {
@@ -215,11 +236,7 @@ function playPrev() {
       return;
     }
   }
-
-  const idx = queue.indexOf(currentId);
-  if (idx > 0) playSong(queue[idx - 1], null, true);
-  else if (queue.length > 1 && repeat === "all") playSong(queue[queue.length - 1], null, true);
-  else audio.currentTime = 0;
+  audio.currentTime = 0;
 }
 
 audio.addEventListener("play", () => {
