@@ -368,7 +368,9 @@ public class MusicaPlaybackService extends MediaSessionService {
 
         private void goPrevious() {
             invalidateFallbacks();
-            if (getCurrentPosition() > 3000) {
+            // Depois do fim da faixa, o botão anterior deve navegar para a faixa
+            // anterior. Só reinicia a faixa atual quando ela ainda está tocando.
+            if (getPlaybackState() != Player.STATE_ENDED && getCurrentPosition() > 3000) {
                 seekTo(0);
             } else if (super.hasPreviousMediaItem()) {
                 super.seekToPreviousMediaItem();
